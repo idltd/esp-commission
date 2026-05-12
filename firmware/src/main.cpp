@@ -16,6 +16,7 @@ static const char CHARSET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 static void connect_wifi(const String &ssid, const String &pass, const String &name) {
     Serial.printf("Connecting to \"%s\"…\n", ssid.c_str());
     WiFi.mode(WIFI_STA);
+    WiFi.setHostname(name.c_str());
     WiFi.begin(ssid.c_str(), pass.c_str());
 
     int attempts = 0;

@@ -101,20 +101,31 @@ export class BlinkDecoder {
 
     let start = 0;
     for (let i = 0; i < 8; i++) start = (start << 1) | b[i];
+
+    // If syncMid is off by ~halfMs, all sampled bits are phase-inverted.
+    // bit[0] is pre-seeded from the preamble edge (always correct); complement the rest.
+    let wb = b;
     if (start !== 0xAA) {
-      this.onError(`bad_sync 0x${start.toString(16).toUpperCase().padStart(2,'0')}`);
-      this._reset(); return;
+      const inv = b.map((v, i) => i === 0 ? 1 : 1 - v);
+      let s2 = 0;
+      for (let i = 0; i < 8; i++) s2 = (s2 << 1) | inv[i];
+      if (s2 === 0xAA) {
+        wb = inv;
+      } else {
+        this.onError(`bad_sync 0x${start.toString(16).toUpperCase().padStart(2,'0')}`);
+        this._reset(); return;
+      }
     }
 
     const raw = new Uint8Array(5);
     for (let byte = 0; byte < 5; byte++) {
       let v = 0;
-      for (let i = 0; i < 8; i++) v = (v << 1) | b[8 + byte * 8 + i];
+      for (let i = 0; i < 8; i++) v = (v << 1) | wb[8 + byte * 8 + i];
       raw[byte] = v;
     }
 
     let rxCs = 0;
-    for (let i = 0; i < 8; i++) rxCs = (rxCs << 1) | b[48 + i];
+    for (let i = 0; i < 8; i++) rxCs = (rxCs << 1) | wb[48 + i];
     const cs = raw.reduce((a, v) => a ^ v, 0);
 
     if (cs !== rxCs) {
