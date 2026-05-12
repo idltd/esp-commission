@@ -37,6 +37,12 @@ async function startScan() {
   const bar     = document.getElementById('scan-bar');
   const counter = document.getElementById('bit-counter');
   const label   = document.getElementById('bit-label');
+  const fpsEl   = document.getElementById('cam-fps');
+
+  // Camera FPS tracking via vid.currentTime (changes once per decoded camera frame)
+  let lastVidTime    = -1;
+  let camFrameCount  = 0;
+  let fpsWindowStart = 0;
 
   function onProgress(phase, bits) {
     if (phase === 'receiving') {
@@ -59,6 +65,9 @@ async function startScan() {
     if (!el) return;
     const line = new Date().toLocaleTimeString() + '  ' + msg;
     el.textContent = line + (el.textContent ? '\n' + el.textContent : '');
+    // keep at most 40 lines
+    const lines = el.textContent.split('\n');
+    if (lines.length > 40) el.textContent = lines.slice(0, 40).join('\n');
   }
 
   const decoder = new BlinkDecoder({
@@ -70,7 +79,8 @@ async function startScan() {
       setTimeout(showConnect, 600);
     },
     onProgress,
-    onError(msg) { dbgLog(msg); }
+    onError(msg)  { dbgLog('ERR  ' + msg); },
+    onDebug(msg)  { dbgLog('dbg  ' + msg); }
   });
 
   function resize() {
@@ -89,6 +99,17 @@ async function startScan() {
 
     const vw = vid.videoWidth, vh = vid.videoHeight;
     if (!vw) return;
+
+    // Track camera FPS (vid.currentTime advances once per decoded camera frame)
+    if (vid.currentTime !== lastVidTime) {
+      camFrameCount++;
+      lastVidTime = vid.currentTime;
+    }
+    if (ts - fpsWindowStart >= 1000) {
+      if (fpsEl) fpsEl.textContent = camFrameCount + ' fps';
+      camFrameCount  = 0;
+      fpsWindowStart = ts;
+    }
 
     const cw = preCvs.width, ch = preCvs.height;
     const sc = Math.max(cw / vw, ch / vh);

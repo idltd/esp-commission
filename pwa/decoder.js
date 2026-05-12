@@ -5,7 +5,8 @@
 // Protocol: 5 bps Manchester (1 = H→L mid-bit, 0 = L→H mid-bit)
 // Frame: preamble(1s ON) | 0xAA(8b) | payload(40b) | XOR-checksum(8b) | end(500ms OFF)
 //
-// new BlinkDecoder({ bps, onDecoded({ suffix, pin, raw }), onProgress(phase, bitsReceived) })
+// new BlinkDecoder({ bps, onDecoded({ suffix, pin, raw }), onProgress(phase, bitsReceived),
+//                    onError(msg), onDebug(msg) })
 //   bps defaults to 5
 //   phase: 'idle' | 'preamble' | 'receiving'
 
@@ -13,11 +14,12 @@ const PREAMBLE_MIN_MS = 400; // must exceed max Manchester data HIGH run (~200ms
 const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 export class BlinkDecoder {
-  constructor({ bps = 5, onDecoded, onProgress, onError }) {
+  constructor({ bps = 5, onDecoded, onProgress, onError, onDebug }) {
     this.bps        = bps;
     this.onDecoded  = onDecoded;
     this.onProgress = onProgress || (() => {});
     this.onError    = onError    || (() => {});
+    this.onDebug    = onDebug    || (() => {});
     this._reset();
   }
 
@@ -61,6 +63,9 @@ export class BlinkDecoder {
           this.lastHighTs = ts;
         } else {
           this.syncMid    = (this.lastHighTs + ts) / 2;
+          const preMs     = Math.round(this.lastHighTs - this.firstHighTs);
+          const gapMs     = Math.round(ts - this.lastHighTs);
+          this.onDebug(`preamble ${preMs}ms  gap ${gapMs}ms  syncMid ${Math.round(this.syncMid)}`);
           this.bits       = [1];
           this.lastBitIdx = 0;
           this._setState('RECEIVING');
@@ -88,7 +93,10 @@ export class BlinkDecoder {
         }
 
         if (elapsed > 58 * bitMs) {
-          if (this.bits.length > 4) this.onError(`timeout at ${this.bits.length}/56 bits`);
+          if (this.bits.length > 4) {
+            this.onError(`timeout at ${this.bits.length}/56 bits`);
+            this.onDebug(`bits: ${this.bits.join('')}`);
+          }
           this._reset();
         }
         break;
@@ -101,6 +109,8 @@ export class BlinkDecoder {
 
     let start = 0;
     for (let i = 0; i < 8; i++) start = (start << 1) | b[i];
+    const syncBin = b.slice(0, 8).join('');
+    this.onDebug(`sync  0x${start.toString(16).toUpperCase().padStart(2,'0')} [${syncBin}]`);
 
     // If syncMid is off by ~halfMs, all sampled bits are phase-inverted.
     // bit[0] is pre-seeded from the preamble edge (always correct); complement the rest.
@@ -110,9 +120,11 @@ export class BlinkDecoder {
       let s2 = 0;
       for (let i = 0; i < 8; i++) s2 = (s2 << 1) | inv[i];
       if (s2 === 0xAA) {
+        this.onDebug(`phase-corrected (inverted sync was 0x${start.toString(16).toUpperCase().padStart(2,'0')})`);
         wb = inv;
       } else {
-        this.onError(`bad_sync 0x${start.toString(16).toUpperCase().padStart(2,'0')}`);
+        this.onError(`bad_sync 0x${start.toString(16).toUpperCase().padStart(2,'0')} [${syncBin}]`);
+        this.onDebug(`all bits: ${b.join('')}`);
         this._reset(); return;
       }
     }
@@ -131,6 +143,7 @@ export class BlinkDecoder {
     if (cs !== rxCs) {
       const hex = Array.from(raw).map(v => v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
       this.onError(`bad_cs calc:${cs.toString(16).toUpperCase().padStart(2,'0')} rx:${rxCs.toString(16).toUpperCase().padStart(2,'0')} [${hex}]`);
+      this.onDebug(`all bits: ${wb.join('')}`);
       this._reset(); return;
     }
 
@@ -148,6 +161,7 @@ export class BlinkDecoder {
       raw[4] & 0xF
     ].join('');
 
+    this.onDebug(`OK  suffix:${suffix}  pin:${pin}`);
     this.onDecoded({ suffix, pin, raw });
     this._reset();
   }

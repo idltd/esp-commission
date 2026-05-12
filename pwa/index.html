@@ -117,10 +117,13 @@ button.primary:active { background: #1a3a1a; }
   </div>
   <canvas id="strip"></canvas>
   <div id="scan-footer">
-    <div id="bit-counter">—</div>
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <div id="bit-counter">—</div>
+      <div id="cam-fps" style="font-size:.75em;color:#555;font-family:monospace">— fps</div>
+    </div>
     <div id="bit-label">Point at the blinking LED</div>
     <div id="scan-track"><div id="scan-bar"></div></div>
-    <div id="debug-log" style="font-size:10px;color:#444;max-height:52px;overflow-y:auto;font-family:monospace;white-space:pre;"></div>
+    <div id="debug-log" style="font-size:11px;color:#666;max-height:160px;overflow-y:auto;font-family:monospace;white-space:pre;border-top:1px solid #1a1a1a;padding-top:6px;margin-top:4px"></div>
   </div>
 </div>
 
