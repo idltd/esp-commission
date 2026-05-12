@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blink Decode Test</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #000; color: #ccc; font-family: monospace; display: flex; flex-direction: column; overflow: hidden; }
+#cam-wrap { flex: 1; min-height: 0; position: relative; }
+#preview  { width: 100%; height: 100%; display: block; }
+#vid      { position: absolute; opacity: 0; pointer-events: none; }
+#overlay  { position: absolute; inset: 0; background: rgba(0,0,0,.9); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; cursor: pointer; }
+#overlay.gone { display: none; }
+#overlay .big { color: #fff; font-size: 1.3em; }
+#strip  { height: 28px; flex-shrink: 0; background: #000; }
+#status { flex-shrink: 0; padding: 8px 12px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; min-height: 32px; }
+#loghdr { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-top: 1px solid #1a1a1a; }
+#loghdr span { color: #333; font-size: 11px; text-transform: uppercase; }
+#copybtn { background: #111; border: 1px solid #333; border-radius: 4px; color: #888; font-family: monospace; font-size: 11px; padding: 3px 10px; cursor: pointer; }
+#log    { flex-shrink: 0; height: 160px; overflow-y: auto; padding: 6px 12px; border-top: 1px solid #1a1a1a; font-size: 12px; line-height: 1.8; }
+.ok   { color: #3f3; }
+.warn { color: #fa0; }
+.err  { color: #f66; }
+.dim  { color: #444; }
+#empty { color: #333; }
+</style>
+</head>
+<body>
+<div id="cam-wrap">
+  <video id="vid" autoplay playsinline muted></video>
+  <canvas id="preview"></canvas>
+  <div id="overlay"><div class="big">▶ Tap to start camera</div></div>
+</div>
+<canvas id="strip"></canvas>
+<div id="status">Waiting…</div>
+<div id="loghdr"><span>Decode log</span><button id="copybtn">Copy</button></div>
+<div id="log"><div id="empty">Nothing decoded yet</div></div>
+
+<script>
+'use strict';
+
+const PREAMBLE_MIN = 8;   // frames — tuned for ~12fps camera (was 24 which needed 2s; preamble is only 1s)
+const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+const SPEEDS = [5, 8, 10, 12, 15, 20, 25];
+
+function makeDecoder(bps, onDecoded, onProgress) {
+  const bitMs  = 1000 / bps;
+  const halfMs =  500 / bps;
+  let state = 'IDLE', streak = 0, lastHighTs = 0, syncMid = 0;
+  let bits = [], lastBitIdx = -1;
+
+  function reset() {
+    const wasRx = state === 'RECEIVING';
+    state = 'IDLE'; streak = 0; bits = []; lastBitIdx = -1;
+    if (wasRx) onProgress('idle', 0);
+  }
+
+  return {
+    feed(bright, ts) {
+      switch (state) {
+        case 'IDLE':
+          if (bright) { streak++; lastHighTs = ts; if (streak >= PREAMBLE_MIN) { state = 'PREAMBLE'; onProgress('preamble', 0); } }
+          else { streak = 0; }
+          break;
+
+        case 'PREAMBLE':
+          if (bright) { lastHighTs = ts; }
+          else { syncMid = (lastHighTs + ts) / 2; bits = [1]; lastBitIdx = 0; state = 'RECEIVING'; onProgress('receiving', 1); }
+          break;
+
+        case 'RECEIVING': {
+          const elapsed  = ts - (syncMid - halfMs / 2);
+          if (elapsed < 0) break;
+          const bitN     = Math.floor(elapsed / bitMs);
+          const posInBit = elapsed % bitMs;
+          if (bitN > lastBitIdx && posInBit < halfMs) {
+            bits.push(bright ? 1 : 0);
+            lastBitIdx = bitN;
+            onProgress('receiving', bits.length);
+            if (bits.length === 56) { validate(); return; }
+          }
+          if (elapsed > 58 * bitMs) reset();
+          break;
+        }
+      }
+    }
+  };
+
+  function validate() {
+    let start = 0;
+    for (let i = 0; i < 8; i++) start = (start << 1) | bits[i];
+    if (start !== 0xAA) { reset(); return; }
+
+    const raw = new Uint8Array(5);
+    for (let b = 0; b < 5; b++) { let v = 0; for (let i = 0; i < 8; i++) v = (v << 1) | bits[8 + b*8 + i]; raw[b] = v; }
+
+    let rxCs = 0;
+    for (let i = 0; i < 8; i++) rxCs = (rxCs << 1) | bits[48 + i];
+    if (raw.reduce((a, v) => a ^ v, 0) !== rxCs) { reset(); return; }
+
+    const s = [
+      (raw[0] >> 2) & 0x3F,
+      ((raw[0] & 0x3) << 4) | (raw[1] >> 4),
+      ((raw[1] & 0xF) << 2) | (raw[2] >> 6),
+      raw[2] & 0x3F
+    ];
+    const suffix = s.map(i => CHARSET[i] ?? '?').join('');
+    const pin = [(raw[3]>>4)&0xF, raw[3]&0xF, (raw[4]>>4)&0xF, raw[4]&0xF].join('');
+
+    onDecoded({ suffix, pin, raw });
+    reset();
+  }
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+const vid     = document.getElementById('vid');
+const pre     = document.getElementById('preview');
+const pctx    = pre.getContext('2d');
+const stripEl = document.getElementById('strip');
+const sctx    = stripEl.getContext('2d');
+const statusEl= document.getElementById('status');
+
+const thBuf = [], TH_WIN = 90, sigBuf = [];
+const logData = [];
+let bestPhase = 'idle', bestBps = null, bestBits = 0;
+
+const decoders = SPEEDS.map(bps => makeDecoder(bps,
+  ({ suffix, pin }) => {
+    const when = new Date().toLocaleTimeString();
+    logData.unshift(`${when}  ${bps} bps  ESP-${suffix}  PIN:${pin}`);
+    document.getElementById('empty')?.remove();
+    const div = document.createElement('div');
+    div.innerHTML = `<span class="ok">✓ ${bps} bps  ESP-${suffix}</span>  <span class="dim">PIN:${pin}  ${when}</span>`;
+    document.getElementById('log').prepend(div);
+  },
+  (phase, bits) => {
+    if (phase === 'receiving')                              { bestPhase = 'receiving'; bestBits = bits; bestBps = bps; }
+    else if (phase === 'preamble' && bestPhase === 'idle') { bestPhase = 'preamble';  bestBps = bps; }
+    else if (phase === 'idle'     && bps === bestBps)      { bestPhase = 'idle'; bestBits = 0; bestBps = null; }
+  }
+));
+
+document.getElementById('copybtn').addEventListener('click', () => {
+  const btn = document.getElementById('copybtn');
+  if (!logData.length) { btn.textContent = 'Nothing yet'; setTimeout(() => btn.textContent = 'Copy', 1500); return; }
+  navigator.clipboard.writeText(logData.join('\n'))
+    .then(() => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); })
+    .catch(() => { btn.textContent = 'Failed';  setTimeout(() => btn.textContent = 'Copy', 1500); });
+});
+
+function sample(ts) {
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  if (!vw || !vh) return;
+  const cw = pre.width, ch = pre.height;
+  const sc = Math.max(cw/vw, ch/vh);
+  pctx.drawImage(vid, (cw-vw*sc)/2, (ch-vh*sc)/2, vw*sc, vh*sc);
+
+  const sz = Math.max(20, Math.min(cw,ch)*0.15|0);
+  const bx = (cw-sz)>>1, by = (ch-sz)>>1;
+  const px = pctx.getImageData(bx, by, sz, sz).data;
+  let s = 0;
+  for (let i = 0; i < px.length; i += 4) s += 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+  const b = s / (sz*sz);
+
+  thBuf.push(b); if (thBuf.length > TH_WIN) thBuf.shift();
+  const mn = Math.min(...thBuf), mx = Math.max(...thBuf);
+  const bright = (mx-mn) > 15 && b > (mn+mx)/2;
+
+  pctx.strokeStyle = bright ? '#3f3' : '#f44';
+  pctx.lineWidth = 2; pctx.strokeRect(bx, by, sz, sz);
+
+  sigBuf.push(bright); if (sigBuf.length > stripEl.width) sigBuf.shift();
+  sctx.fillStyle = '#000'; sctx.fillRect(0, 0, stripEl.width, stripEl.height);
+  for (let i = 0; i < sigBuf.length; i++) { sctx.fillStyle = sigBuf[i] ? '#3f3' : '#111'; sctx.fillRect(i, 3, 1, stripEl.height-6); }
+
+  const contrast = Math.round(mx-mn);
+  let st = `brightness ${Math.round(b)}  contrast ${contrast}`;
+  if      (bestPhase === 'preamble')  st += `  <span style="color:#fa0">preamble…</span>`;
+  else if (bestPhase === 'receiving') st += `  <span style="color:#fa0">receiving @ ${bestBps} bps  ${bestBits}/56</span>`;
+  statusEl.innerHTML = st;
+
+  for (const d of decoders) d.feed(bright, ts);
+}
+
+function tick(ts) { sample(ts); requestAnimationFrame(tick); }
+function resize() {
+  pre.width = pre.offsetWidth; pre.height = pre.offsetHeight;
+  stripEl.width = stripEl.offsetWidth; stripEl.height = stripEl.offsetHeight;
+  sigBuf.length = 0;
+}
+window.addEventListener('resize', resize); resize();
+
+document.getElementById('overlay').addEventListener('click', async function() {
+  this.querySelector('.big').textContent = 'Opening…';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
+    vid.srcObject = stream; vid.play();
+    await new Promise(r => vid.onloadedmetadata = r);
+    this.classList.add('gone');
+    requestAnimationFrame(tick);
+  } catch(e) { this.querySelector('.big').textContent = '⚠ ' + e.message; }
+});
+</script>
+</body>
+</html>
