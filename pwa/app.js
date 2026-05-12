@@ -135,8 +135,13 @@ function stopCamera() {
 
 // --- Connect screen ---
 function showConnect() {
-  document.getElementById('ssid-label').textContent = 'ESP-' + fingerprint.suffix;
+  const suffix   = fingerprint.suffix;
+  const hostname = 'esp32-' + suffix.toLowerCase();
+  document.getElementById('ssid-label').textContent = 'ESP-' + suffix;
   document.getElementById('pin-label').textContent  = fingerprint.pin;
+  const link = document.getElementById('device-link');
+  link.textContent = hostname + '.local';
+  link.href        = 'http://' + hostname + '.local';
   navigator.clipboard.writeText(fingerprint.pin).catch(() => {});
   show('screen-connect');
 }

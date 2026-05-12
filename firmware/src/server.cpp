@@ -47,8 +47,6 @@ button{width:100%;padding:14px;margin-top:20px;background:#0d2b0d;
   <select id="ssid"><option value="">Loading…</option></select>
   <label>WiFi Password</label>
   <input type="password" id="pass" autocomplete="current-password">
-  <label>Device Name</label>
-  <input type="text" id="name" value="__NAME__" maxlength="32" autocomplete="off" spellcheck="false">
   <label>Device PIN</label>
   <input type="text" id="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
          placeholder="4-digit PIN from blink" autocomplete="off">
@@ -81,7 +79,6 @@ document.getElementById('f').addEventListener('submit',function(e){
     body:JSON.stringify({
       wifi_ssid:sel.value,
       wifi_password:document.getElementById('pass').value,
-      device_name:document.getElementById('name').value,
       pin:pin
     })
   }).then(function(r){
@@ -98,9 +95,7 @@ document.getElementById('f').addEventListener('submit',function(e){
 )HTML";
 
 static void handle_root() {
-    String page = SETUP_PAGE;
-    page.replace("__NAME__", _default_name);
-    _srv.send(200, "text/html; charset=utf-8", page);
+    _srv.send(200, "text/html; charset=utf-8", SETUP_PAGE);
 }
 
 static void handle_networks() {
@@ -156,7 +151,6 @@ static void handle_adopt() {
 
     String ssid    = extract("\"wifi_ssid\"");
     String pass    = extract("\"wifi_password\"");
-    String name    = extract("\"device_name\"");
     String pin_str = extract("\"pin\"");
 
     if (ssid.isEmpty()) {
@@ -180,7 +174,7 @@ static void handle_adopt() {
     prefs.begin("onboarding", false);
     prefs.putString("wifi_ssid", ssid);
     prefs.putString("wifi_pass", pass);
-    prefs.putString("devname",   name.isEmpty() ? _default_name : name);
+    prefs.putString("devname",   _default_name);
     prefs.putUChar("adopted", 1);
     prefs.end();
 
@@ -199,17 +193,10 @@ void server_start(const char suffix[4], const uint8_t pin[4]) {
     Serial.printf("SoftAP SSID: %s  (open)  IP: %s\n",
                   _ap_ssid, WiFi.softAPIP().toString().c_str());
 
-    {
-        String chip = ESP.getChipModel();
-        chip.toLowerCase();
-        chip.replace("-", "");
-        String mac   = WiFi.macAddress();
-        String last4 = mac.substring(12, 14) + mac.substring(15, 17);
-        last4.toLowerCase();
-        snprintf(_default_name, sizeof(_default_name), "%s-%s",
-                 chip.c_str(), last4.c_str());
-        Serial.printf("Default name: %s\n", _default_name);
-    }
+    snprintf(_default_name, sizeof(_default_name), "esp32-%c%c%c%c",
+             tolower(suffix[0]), tolower(suffix[1]),
+             tolower(suffix[2]), tolower(suffix[3]));
+    Serial.printf("Device name: %s\n", _default_name);
 
     WiFi.scanNetworks(/*async=*/true);
 

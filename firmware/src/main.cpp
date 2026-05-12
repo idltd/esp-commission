@@ -105,16 +105,20 @@ void setup() {
         return;
     }
 
-    // Not yet adopted — generate fresh random code for this boot.
-    // Fresh values every boot — a recorded blink is useless next time.
-    char    suffix[4];
+    // Not yet adopted.
+    // Suffix is MAC-derived (persistent, unique per device); PIN is fresh each boot.
+    WiFi.mode(WIFI_AP_STA);
+    char    suffix[5];
     uint8_t pin[4];
-    for (int i = 0; i < 4; i++) suffix[i] = CHARSET[esp_random() % 36];
-    for (int i = 0; i < 4; i++) pin[i]    = esp_random() % 10;
+    {
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        snprintf(suffix, 5, "%02X%02X", mac[4], mac[5]);
+    }
+    for (int i = 0; i < 4; i++) pin[i] = esp_random() % 10;
 
-    Serial.printf("SSID: ESP-%c%c%c%c  PIN: %d%d%d%d\n",
-                  suffix[0], suffix[1], suffix[2], suffix[3],
-                  pin[0], pin[1], pin[2], pin[3]);
+    Serial.printf("SSID: ESP-%s  PIN: %d%d%d%d\n",
+                  suffix, pin[0], pin[1], pin[2], pin[3]);
 
     // Pack into 5 bytes: 4×6-bit suffix indices + 4×4-bit PIN digits.
     uint8_t s[4];

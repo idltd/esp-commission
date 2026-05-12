@@ -127,18 +127,22 @@ button.primary:active { background: #1a3a1a; }
 <!-- Connect -->
 <div id="screen-connect" class="screen">
   <h2>Connect to Device</h2>
-  <p>Go to your phone's WiFi settings and join this network:</p>
   <div class="info-box">
-    <div class="label">Network name</div>
+    <div class="label">1 · Join this WiFi network</div>
     <div class="value" id="ssid-label">——————</div>
-    <div class="sub">No password needed — open network</div>
+    <div class="sub">No password — open network</div>
   </div>
   <div class="info-box">
-    <div class="label">Device PIN</div>
+    <div class="label">2 · Enter this PIN when prompted</div>
     <div class="value" id="pin-label">——————</div>
-    <div class="sub">Enter this on the setup page</div>
+    <div class="sub">Captive portal opens automatically</div>
   </div>
-  <p class="hint">Once connected, a setup page will open. Enter your home WiFi details and the PIN above.</p>
+  <div class="info-box">
+    <div class="label">3 · Open device page</div>
+    <div class="value"><a id="device-link" href="#" style="color:#3f3;text-decoration:none">——————</a></div>
+    <div class="sub">Tap after rejoining your home WiFi</div>
+  </div>
+  <p class="hint" style="color:#f84">LED still flashing? Setup failed — start again.</p>
   <button id="btn-done">Done</button>
 </div>
 

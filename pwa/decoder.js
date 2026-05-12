@@ -9,7 +9,7 @@
 //   bps defaults to 5
 //   phase: 'idle' | 'preamble' | 'receiving'
 
-const PREAMBLE_MIN = 8;
+const PREAMBLE_MIN_MS = 400; // must exceed max Manchester data HIGH run (~200ms)
 const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 export class BlinkDecoder {
@@ -28,9 +28,9 @@ export class BlinkDecoder {
 
   _reset() {
     const wasReceiving = this.state === 'RECEIVING';
-    this.state      = 'IDLE';
-    this.streak     = 0;
-    this.lastHighTs = 0;
+    this.state       = 'IDLE';
+    this.firstHighTs = 0;
+    this.lastHighTs  = 0;
     this.syncMid    = 0;
     this.bits       = [];
     this.lastBitIdx = -1;
@@ -47,12 +47,12 @@ export class BlinkDecoder {
 
       case 'IDLE':
         if (bright) {
-          this.streak++;
+          if (!this.firstHighTs) this.firstHighTs = ts;
           this.lastHighTs = ts;
-          if (this.streak >= PREAMBLE_MIN) this._setState('PREAMBLE');
+          if ((ts - this.firstHighTs) >= PREAMBLE_MIN_MS) this._setState('PREAMBLE');
         } else {
-          if (this.streak > 0) this.onProgress('idle', 0);
-          this.streak = 0;
+          if (this.firstHighTs) this.onProgress('idle', 0);
+          this.firstHighTs = 0;
         }
         break;
 
@@ -87,7 +87,10 @@ export class BlinkDecoder {
           }
         }
 
-        if (elapsed > 58 * bitMs) this._reset();
+        if (elapsed > 58 * bitMs) {
+          if (this.bits.length > 4) this.onError(`timeout at ${this.bits.length}/56 bits`);
+          this._reset();
+        }
         break;
       }
     }
