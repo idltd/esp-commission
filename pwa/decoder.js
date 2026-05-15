@@ -1,168 +1,205 @@
 'use strict';
 
-// Manchester decoder for the ESP32 blink protocol.
+// PWM optical decoder — record-then-decode.
 //
-// Protocol: 5 bps Manchester (1 = H→L mid-bit, 0 = L→H mid-bit)
-// Frame: preamble(1s ON) | 0xAA(8b) | payload(40b) | XOR-checksum(8b) | end(500ms OFF)
+// Firmware constants (blink.cpp):
+//   PULSE_SHORT = 150 ms  (bit 0)
+//   PULSE_LONG  = 350 ms  (bit 1)
+//   BIT_GAP_MS  = 200 ms  (LOW gap after every bit)
+//   PRE_MS      = 1000 ms (preamble HIGH)
+//   PRE_GAP_MS  = 300 ms  (LOW gap after preamble, before data)
+//   POST_MS     = 500 ms  (trailing LOW before next cycle)
 //
-// new BlinkDecoder({ bps, onDecoded({ suffix, pin, raw }), onProgress(phase, bitsReceived),
-//                    onError(msg), onDebug(msg) })
-//   bps defaults to 5
-//   phase: 'idle' | 'preamble' | 'receiving'
+// Frame: 32 bits (4 bytes, MSB first)
+//   byte 0: suffix hex nibbles 0-1  (4 bits each, 0-15)
+//   byte 1: suffix hex nibbles 2-3
+//   byte 2: PIN BCD  high=tens low=units, 0-99
+//   byte 3: CRC8 = byte0 ^ byte1 ^ byte2
+//
+// PIN display expansion: n=tens*10+units
+//   a=tens, b=units, c=(a+b)%10, d=(a*3+b*7)%10 → display [a,c,b,d]
+//
+// Decode strategy:
+//   1. Measure HIGH pulse widths from buffer. <250ms=0, >=250ms=1.
+//      Each bit carries a confidence score (distance from threshold).
+//   2. Accumulate per-bit votes across multiple frame passes.
+//   3. On CRC fail: try voted majority, then 1- and 2-bit corrections
+//      on the least-confident bits.
 
-const PREAMBLE_MIN_MS = 400; // must exceed max Manchester data HIGH run (~200ms)
-const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const PULSE_SHORT = 150;   // ms  firmware PULSE_SHORT
+const PULSE_LONG  = 350;   // ms  firmware PULSE_LONG
+const THRESHOLD   = (PULSE_SHORT + PULSE_LONG) / 2;  // 250 ms
+const PRE_MIN     = 600;   // ms  min HIGH for preamble (> PULSE_LONG, unambiguous)
+const BITS_FRAME  = 32;
+const BUF_MS      = 25000; // ms  rolling buffer
+const SCAN_INT    = 800;   // ms  scan cadence
+const READY_MS    = 20000; // ms  expected max time for one full cycle in buffer
+const HEX         = '0123456789ABCDEF';
 
 export class BlinkDecoder {
-  constructor({ bps = 5, onDecoded, onProgress, onError, onDebug }) {
-    this.bps        = bps;
-    this.onDecoded  = onDecoded;
-    this.onProgress = onProgress || (() => {});
-    this.onError    = onError    || (() => {});
-    this.onDebug    = onDebug    || (() => {});
-    this._reset();
-  }
-
-  setBps(bps) { this.bps = bps; this._reset(); }
-
-  get _bitMs()  { return 1000 / this.bps; }
-  get _halfMs() { return  500 / this.bps; }
-
-  _reset() {
-    const wasReceiving = this.state === 'RECEIVING';
-    this.state       = 'IDLE';
-    this.firstHighTs = 0;
-    this.lastHighTs  = 0;
-    this.syncMid    = 0;
-    this.bits       = [];
-    this.lastBitIdx = -1;
-    if (wasReceiving) this.onProgress('idle', 0);
-  }
-
-  _setState(s) {
-    this.state = s;
-    this.onProgress(s.toLowerCase(), this.bits.length);
+  constructor({ onDecoded, onProgress, onError, onDebug } = {}) {
+    this._dec  = onDecoded  || (() => {});
+    this._prog = onProgress || (() => {});
+    this._err  = onError    || (() => {});
+    this._dbg  = onDebug    || (() => {});
+    this._buf  = [];
+    this._t0   = null;
+    this._lastScan  = 0;
+    this._votes     = new Int16Array(BITS_FRAME);  // per-bit vote accumulators
+    this._voteCount = 0;                           // frames accumulated
   }
 
   feed(bright, ts) {
-    switch (this.state) {
+    if (this._t0 === null) this._t0 = ts;
+    this._buf.push({ bright, ts });
 
-      case 'IDLE':
-        if (bright) {
-          if (!this.firstHighTs) this.firstHighTs = ts;
-          this.lastHighTs = ts;
-          if ((ts - this.firstHighTs) >= PREAMBLE_MIN_MS) this._setState('PREAMBLE');
-        } else {
-          if (this.firstHighTs) this.onProgress('idle', 0);
-          this.firstHighTs = 0;
+    const cutoff = ts - BUF_MS;
+    while (this._buf.length > 0 && this._buf[0].ts < cutoff)
+      this._buf.shift();
+
+    const span = ts - this._t0;
+    this._prog('recording', Math.min(100, Math.round(span / READY_MS * 100)));
+
+    if (ts - this._lastScan >= SCAN_INT) {
+      this._lastScan = ts;
+      this._scan();
+    }
+  }
+
+  _scan() {
+    const preambles = this._findPreambles();
+    this._dbg(`scan: ${preambles.length} preamble(s), buf=${this._buf.length}`);
+    if (!preambles.length) return;
+    this._prog('scanning', 0);
+
+    for (const tf of preambles) {
+      const result = this._decodePulses(tf);
+      if (!result) { this._dbg(`tf=${tf|0} insufficient data`); continue; }
+
+      const { bits, confidence } = result;
+
+      // Accumulate votes for cross-reading majority
+      this._voteCount++;
+      for (let i = 0; i < BITS_FRAME; i++)
+        this._votes[i] += bits[i] ? 1 : -1;
+
+      // 1. Primary decode
+      if (this._tryDecode(bits, 'primary')) return;
+
+      // 2. Voted majority (requires >=2 frames)
+      if (this._voteCount >= 2) {
+        const voted = Array.from(this._votes, v => v > 0 ? 1 : 0);
+        if (this._tryDecode(voted, `voted(${this._voteCount})`)) return;
+      }
+
+      // 3. Trial corrections on least-confident bits
+      const ranked = confidence
+        .map((c, i) => ({ i, c }))
+        .sort((a, b) => a.c - b.c);
+
+      // 1-bit flips (top 8 least confident)
+      for (let k = 0; k < Math.min(8, ranked.length); k++) {
+        const f = [...bits]; f[ranked[k].i] ^= 1;
+        if (this._tryDecode(f, `1flip[${ranked[k].i}]`)) return;
+      }
+
+      // 2-bit flips (top 4 pairs)
+      for (let k = 0; k < Math.min(4, ranked.length); k++) {
+        for (let j = k + 1; j < Math.min(4, ranked.length); j++) {
+          const f = [...bits]; f[ranked[k].i] ^= 1; f[ranked[j].i] ^= 1;
+          if (this._tryDecode(f, `2flip[${ranked[k].i},${ranked[j].i}]`)) return;
         }
-        break;
-
-      case 'PREAMBLE':
-        if (bright) {
-          this.lastHighTs = ts;
-        } else {
-          this.syncMid    = (this.lastHighTs + ts) / 2;
-          const preMs     = Math.round(this.lastHighTs - this.firstHighTs);
-          const gapMs     = Math.round(ts - this.lastHighTs);
-          this.onDebug(`preamble ${preMs}ms  gap ${gapMs}ms  syncMid ${Math.round(this.syncMid)}`);
-          this.bits       = [1];
-          this.lastBitIdx = 0;
-          this._setState('RECEIVING');
-        }
-        break;
-
-      case 'RECEIVING': {
-        const bitMs    = this._bitMs;
-        const halfMs   = this._halfMs;
-        const elapsed  = ts - (this.syncMid - halfMs / 2);
-        if (elapsed < 0) break;
-
-        const bitN     = Math.floor(elapsed / bitMs);
-        const posInBit = elapsed % bitMs;
-
-        if (bitN > this.lastBitIdx && posInBit < halfMs) {
-          this.bits.push(bright ? 1 : 0);
-          this.lastBitIdx = bitN;
-          this.onProgress('receiving', this.bits.length);
-
-          if (this.bits.length === 56) {
-            this._validate();
-            return;
-          }
-        }
-
-        if (elapsed > 58 * bitMs) {
-          if (this.bits.length > 4) {
-            this.onError(`timeout at ${this.bits.length}/56 bits`);
-            this.onDebug(`bits: ${this.bits.join('')}`);
-          }
-          this._reset();
-        }
-        break;
       }
     }
   }
 
-  _validate() {
-    const b = this.bits;
-
-    let start = 0;
-    for (let i = 0; i < 8; i++) start = (start << 1) | b[i];
-    const syncBin = b.slice(0, 8).join('');
-    this.onDebug(`sync  0x${start.toString(16).toUpperCase().padStart(2,'0')} [${syncBin}]`);
-
-    // If syncMid is off by ~halfMs, all sampled bits are phase-inverted.
-    // bit[0] is pre-seeded from the preamble edge (always correct); complement the rest.
-    let wb = b;
-    if (start !== 0xAA) {
-      const inv = b.map((v, i) => i === 0 ? 1 : 1 - v);
-      let s2 = 0;
-      for (let i = 0; i < 8; i++) s2 = (s2 << 1) | inv[i];
-      if (s2 === 0xAA) {
-        this.onDebug(`phase-corrected (inverted sync was 0x${start.toString(16).toUpperCase().padStart(2,'0')})`);
-        wb = inv;
-      } else {
-        this.onError(`bad_sync 0x${start.toString(16).toUpperCase().padStart(2,'0')} [${syncBin}]`);
-        this.onDebug(`all bits: ${b.join('')}`);
-        this._reset(); return;
+  _findPreambles() {
+    const buf = this._buf, out = [];
+    let hiStart = null;
+    for (let i = 1; i < buf.length; i++) {
+      const p = buf[i - 1], c = buf[i];
+      if (!p.bright && c.bright) {
+        hiStart = c.ts;
+      } else if (p.bright && !c.bright) {
+        if (hiStart !== null && c.ts - hiStart >= PRE_MIN)
+          out.push((p.ts + c.ts) / 2);
+        hiStart = null;
       }
     }
+    return out;
+  }
 
-    const raw = new Uint8Array(5);
-    for (let byte = 0; byte < 5; byte++) {
-      let v = 0;
-      for (let i = 0; i < 8; i++) v = (v << 1) | wb[8 + byte * 8 + i];
-      raw[byte] = v;
+  // Walk the buffer from tf, measuring successive HIGH pulse widths.
+  // Returns { bits[32], confidence[32] } or null if buffer runs out.
+  _decodePulses(tf) {
+    const buf = this._buf;
+    const bits = [], confidence = [];
+
+    // Advance cursor past tf
+    let cur = 0;
+    while (cur < buf.length && buf[cur].ts <= tf) cur++;
+
+    for (let n = 0; n < BITS_FRAME; n++) {
+      // Rising edge (dark → bright)
+      let ri = -1;
+      for (let i = Math.max(1, cur); i < buf.length; i++) {
+        if (!buf[i - 1].bright && buf[i].bright) { ri = i; break; }
+      }
+      if (ri < 0) return null;
+
+      // Falling edge (bright → dark)
+      let fi = -1;
+      for (let i = ri + 1; i < buf.length; i++) {
+        if (buf[i - 1].bright && !buf[i].bright) { fi = i; break; }
+      }
+      if (fi < 0) return null;
+
+      const rise = (buf[ri - 1].ts + buf[ri].ts) / 2;
+      const fall = (buf[fi - 1].ts + buf[fi].ts) / 2;
+      const w    = fall - rise;
+      const bit  = w >= THRESHOLD ? 1 : 0;
+      const conf = Math.abs(w - THRESHOLD);
+
+      bits.push(bit);
+      confidence.push(conf);
+      this._dbg(`bit[${n}]=${bit} w=${w|0}ms conf=${conf|0}`);
+
+      cur = fi;
     }
 
-    let rxCs = 0;
-    for (let i = 0; i < 8; i++) rxCs = (rxCs << 1) | wb[48 + i];
-    const cs = raw.reduce((a, v) => a ^ v, 0);
+    return { bits, confidence };
+  }
 
-    if (cs !== rxCs) {
-      const hex = Array.from(raw).map(v => v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
-      this.onError(`bad_cs calc:${cs.toString(16).toUpperCase().padStart(2,'0')} rx:${rxCs.toString(16).toUpperCase().padStart(2,'0')} [${hex}]`);
-      this.onDebug(`all bits: ${wb.join('')}`);
-      this._reset(); return;
+  _tryDecode(bits, label) {
+    const H = v => v.toString(16).padStart(2, '0').toUpperCase();
+    const bytes = Array.from({ length: 4 }, (_, i) =>
+      bits.slice(i * 8, i * 8 + 8).reduce((v, b, j) => v | (b << (7 - j)), 0)
+    );
+    const [b0, b1, b2, b3] = bytes;
+
+    const crc = b0 ^ b1 ^ b2;
+    if (crc !== b3) {
+      this._err(`bad_crc ${H(crc)}!=${H(b3)} [${label}]`);
+      return false;
     }
 
-    const s = [
-      (raw[0] >> 2) & 0x3F,
-      ((raw[0] & 0x3) << 4) | (raw[1] >> 4),
-      ((raw[1] & 0xF) << 2) | (raw[2] >> 6),
-      raw[2] & 0x3F
-    ];
-    const suffix = s.map(i => CHARSET[i] ?? '?').join('');
-    const pin = [
-      (raw[3] >> 4) & 0xF,
-      raw[3] & 0xF,
-      (raw[4] >> 4) & 0xF,
-      raw[4] & 0xF
-    ].join('');
+    // Suffix: four 4-bit hex nibbles — all values 0-15 are valid hex chars
+    const suffix = [b0 >> 4, b0 & 0xF, b1 >> 4, b1 & 0xF].map(n => HEX[n]).join('');
 
-    this.onDebug(`OK  suffix:${suffix}  pin:${pin}`);
-    this.onDecoded({ suffix, pin, raw });
-    this._reset();
+    // PIN: BCD 0-99 — both nibbles must be decimal digits
+    const tens = (b2 >> 4) & 0xF, units = b2 & 0xF;
+    if (tens > 9 || units > 9) {
+      this._err(`bad_pin nibbles ${tens},${units} [${label}]`);
+      return false;
+    }
+
+    // Expand 2-digit PIN to 4-digit display code
+    const a = tens, b = units;
+    const pin = `${a}${(a + b) % 10}${b}${(a * 3 + b * 7) % 10}`;
+
+    this._dbg(`OK suffix=${suffix} pin=${pin} [${label}]`);
+    this._votes.fill(0); this._voteCount = 0;
+    this._dec({ suffix, pin });
+    return true;
   }
 }

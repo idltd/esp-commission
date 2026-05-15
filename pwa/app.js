@@ -44,15 +44,15 @@ async function startScan() {
   let camFrameCount  = 0;
   let fpsWindowStart = 0;
 
-  function onProgress(phase, bits) {
-    if (phase === 'receiving') {
-      counter.textContent = bits + ' / 56';
-      label.textContent   = (56 - bits) + ' bits to go';
-      bar.style.width     = Math.round((bits / 56) * 100) + '%';
-    } else if (phase === 'preamble') {
+  function onProgress(phase, val) {
+    if (phase === 'recording') {
+      counter.textContent = val + '%';
+      label.textContent   = 'Recording signal…';
+      bar.style.width     = val + '%';
+    } else if (phase === 'scanning') {
       counter.textContent = '—';
-      label.textContent   = 'Signal found — locking on…';
-      bar.style.width     = '4%';
+      label.textContent   = 'Decoding…';
+      bar.style.width     = '95%';
     } else {
       counter.textContent = '—';
       label.textContent   = 'Point at the blinking LED';
@@ -176,6 +176,11 @@ function showError(msg) {
 document.getElementById('btn-start').addEventListener('click', startScan);
 document.getElementById('btn-done').addEventListener('click',  () => { fingerprint = null; show('screen-home'); });
 document.getElementById('btn-retry').addEventListener('click', () => { fingerprint = null; show('screen-home'); });
+
+document.getElementById('btn-copy-debug').addEventListener('click', () => {
+  const text = document.getElementById('debug-log').textContent;
+  navigator.clipboard.writeText(text).catch(() => {});
+});
 
 if ('serviceWorker' in navigator)
   navigator.serviceWorker.register('./sw.js').catch(() => {});

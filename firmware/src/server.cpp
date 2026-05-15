@@ -83,7 +83,8 @@ document.getElementById('f').addEventListener('submit',function(e){
     })
   }).then(function(r){
     if(r.ok){
-      msg.textContent='Done! Reconnect your phone to your home WiFi.';
+      msg.textContent='Done! Device is connecting… this page will close.';
+      setTimeout(function(){try{window.close();}catch(e){}},2000);
     } else {
       btn.disabled=false;
       r.text().then(function(t){msg.textContent='Error: '+t;});
@@ -188,14 +189,15 @@ void server_start(const char suffix[4], const uint8_t pin[4]) {
     snprintf(_ap_ssid, sizeof(_ap_ssid), "ESP-%c%c%c%c",
              suffix[0], suffix[1], suffix[2], suffix[3]);
 
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(_ap_ssid);
-    Serial.printf("SoftAP SSID: %s  (open)  IP: %s\n",
-                  _ap_ssid, WiFi.softAPIP().toString().c_str());
-
     snprintf(_default_name, sizeof(_default_name), "esp32-%c%c%c%c",
              tolower(suffix[0]), tolower(suffix[1]),
              tolower(suffix[2]), tolower(suffix[3]));
+
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setHostname(_default_name);
+    WiFi.softAP(_ap_ssid);
+    Serial.printf("SoftAP SSID: %s  (open)  IP: %s\n",
+                  _ap_ssid, WiFi.softAPIP().toString().c_str());
     Serial.printf("Device name: %s\n", _default_name);
 
     WiFi.scanNetworks(/*async=*/true);

@@ -11,11 +11,13 @@
 
 static bool _connected = false;
 
-static const char CHARSET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+// hex digit value: '0'-'9' -> 0-9, 'A'-'F' -> 10-15
+static uint8_t hv(char c) { return (uint8_t)(c >= 'A' ? c - 'A' + 10 : c - '0'); }
 
 static void connect_wifi(const String &ssid, const String &pass, const String &name) {
     Serial.printf("Connecting to \"%s\"…\n", ssid.c_str());
     WiFi.mode(WIFI_STA);
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);  // re-arm DHCP so setHostname takes effect
     WiFi.setHostname(name.c_str());
     WiFi.begin(ssid.c_str(), pass.c_str());
 
@@ -37,8 +39,10 @@ static void connect_wifi(const String &ssid, const String &pass, const String &n
     }
 
     Serial.printf("Connected: %s\n", WiFi.localIP().toString().c_str());
-    if (MDNS.begin(name.c_str()))
+    if (MDNS.begin(name.c_str())) {
+        MDNS.addService("http", "tcp", 80);
         Serial.printf("mDNS: %s.local\n", name.c_str());
+    }
 }
 
 static void start_connected_mode(const String &name) {
@@ -109,30 +113,29 @@ void setup() {
     // Not yet adopted.
     // Suffix is MAC-derived (persistent, unique per device); PIN is fresh each boot.
     WiFi.mode(WIFI_AP_STA);
-    char    suffix[5];
-    uint8_t pin[4];
+    char suffix[5];
     {
         uint8_t mac[6];
         WiFi.macAddress(mac);
         snprintf(suffix, 5, "%02X%02X", mac[4], mac[5]);
     }
-    for (int i = 0; i < 4; i++) pin[i] = esp_random() % 10;
 
-    Serial.printf("SSID: ESP-%s  PIN: %d%d%d%d\n",
-                  suffix, pin[0], pin[1], pin[2], pin[3]);
+    // 2-digit PIN (0-99) expanded to 4 digits for display and server verification.
+    // Expansion: a=tens, b=units, c=(a+b)%10, d=(a*3+b*7)%10 -> display [a,c,b,d]
+    int n = (int)(esp_random() % 100);
+    int a = n / 10, b = n % 10;
+    int c = (a + b) % 10;
+    int d = (a * 3 + b * 7) % 10;
+    uint8_t pin[4] = { (uint8_t)a, (uint8_t)c, (uint8_t)b, (uint8_t)d };
 
-    // Pack into 5 bytes: 4×6-bit suffix indices + 4×4-bit PIN digits.
-    uint8_t s[4];
-    for (int i = 0; i < 4; i++) {
-        const char *cp = strchr(CHARSET, suffix[i]);
-        s[i] = cp ? (uint8_t)(cp - CHARSET) : 0;
-    }
-    uint8_t payload[5];
-    payload[0] = (s[0] << 2) | (s[1] >> 4);
-    payload[1] = ((s[1] & 0xF) << 4) | (s[2] >> 2);
-    payload[2] = ((s[2] & 0x3) << 6) | s[3];
-    payload[3] = (pin[0] << 4) | pin[1];
-    payload[4] = (pin[2] << 4) | pin[3];
+    Serial.printf("SSID: ESP-%s  PIN: %d%d%d%d\n", suffix, a, c, b, d);
+
+    // Pack 4 bytes: suffix nibbles (4-bit hex) | PIN BCD | CRC8
+    uint8_t payload[4];
+    payload[0] = (hv(suffix[0]) << 4) | hv(suffix[1]);
+    payload[1] = (hv(suffix[2]) << 4) | hv(suffix[3]);
+    payload[2] = ((uint8_t)a << 4) | (uint8_t)b;
+    payload[3] = payload[0] ^ payload[1] ^ payload[2];
 
     blink_start(payload);
     server_start(suffix, pin);
@@ -153,7 +156,7 @@ void loop() {
         // Keep the AP and commissioning page alive so the user can read the
         // "Done!" message before the connection drops.
         uint32_t t = millis();
-        while (millis() - t < 1500) {
+        while (millis() - t < 2500) {
             server_handle();
             delay(10);
         }

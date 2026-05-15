@@ -1,4 +1,4 @@
-const CACHE = 'device-setup-v9';
+const CACHE = 'device-setup-v16';
 const ASSETS = [
   './',
   './index.html',

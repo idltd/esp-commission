@@ -107,6 +107,7 @@ button.primary:active { background: #1a3a1a; }
   <h1>Device Setup</h1>
   <p>Add a new device to your home network. Point your camera at the device's LED when ready.</p>
   <button id="btn-start" class="primary">Add Device</button>
+  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v16</div>
 </div>
 
 <!-- Scan -->
@@ -123,7 +124,13 @@ button.primary:active { background: #1a3a1a; }
     </div>
     <div id="bit-label">Point at the blinking LED</div>
     <div id="scan-track"><div id="scan-bar"></div></div>
-    <div id="debug-log" style="font-size:11px;color:#666;max-height:160px;overflow-y:auto;font-family:monospace;white-space:pre;border-top:1px solid #1a1a1a;padding-top:6px;margin-top:4px"></div>
+    <div style="border-top:1px solid #1a1a1a;margin-top:4px;padding-top:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:10px;color:#444;text-transform:uppercase;letter-spacing:.06em">Debug</span>
+        <button id="btn-copy-debug" style="font-size:10px;color:#666;background:none;border:1px solid #333;border-radius:4px;padding:2px 8px;cursor:pointer;width:auto;max-width:none">Copy all</button>
+      </div>
+      <div id="debug-log" style="font-size:11px;color:#666;height:110px;overflow-y:auto;font-family:monospace;white-space:pre"></div>
+    </div>
   </div>
 </div>
 
@@ -143,7 +150,7 @@ button.primary:active { background: #1a3a1a; }
   <div class="info-box">
     <div class="label">3 · Open device page</div>
     <div class="value"><a id="device-link" href="#" style="color:#3f3;text-decoration:none">——————</a></div>
-    <div class="sub">Tap after rejoining your home WiFi</div>
+    <div class="sub">iOS: tap to open &middot; Android: find device IP in router</div>
   </div>
   <p class="hint" style="color:#f84">LED still flashing? Setup failed — start again.</p>
   <button id="btn-done">Done</button>
