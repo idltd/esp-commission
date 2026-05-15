@@ -1,6 +1,6 @@
 {
-  "name": "Device Setup",
-  "short_name": "Setup",
+  "name": "ESP Commission",
+  "short_name": "Commission",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#000000",
