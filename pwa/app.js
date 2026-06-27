@@ -186,7 +186,9 @@ function stopCamera() {
 
 // --- Connect screen ---
 function showConnect() {
-  document.getElementById('ssid-label').textContent = 'ESP-' + fingerprint.suffix;
+  const ssid = 'ESP-' + fingerprint.suffix;
+  document.getElementById('ssid-label').textContent = ssid;
+  document.getElementById('ssid-wifi').textContent  = ssid;
   document.getElementById('pin-label').textContent  = fingerprint.pin;
   navigator.clipboard.writeText(fingerprint.pin).catch(() => {});
   show('screen-connect');

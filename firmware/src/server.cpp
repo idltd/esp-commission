@@ -30,8 +30,6 @@ h2{color:#fff;margin-bottom:4px}
 .step{margin-bottom:24px}
 .step h3{color:#fff;font-size:1em;margin-bottom:8px}
 .step p{color:#777;font-size:.88em;margin-bottom:10px}
-a.app-btn{display:block;padding:14px;background:#0d2b0d;border:1px solid #2a5a2a;
-          border-radius:10px;color:#3f3;text-decoration:none;text-align:center;font-size:1em}
 hr{border:none;border-top:1px solid #1a1a1a;margin:0 0 24px}
 label{display:block;color:#555;font-size:.78em;text-transform:uppercase;
       letter-spacing:.05em;margin:14px 0 4px}
@@ -54,8 +52,8 @@ __WARN__
 
 <div class="step">
   <h3>1 &middot; Get your PIN</h3>
-  <p>Open the ESP Commission app, scan the blinking LED, and note the PIN shown.</p>
-  <a class="app-btn" href="https://idltd.github.io/esp-commission/">Open ESP Commission &rarr;</a>
+  <p>Open the <strong style="color:#aaa">ESP Commission</strong> app on your home screen, scan the blinking LED, and note the PIN shown.</p>
+  <p style="color:#333;font-size:.78em;margin-top:8px">No app? Install from <strong>idltd.github.io/esp-commission</strong> &mdash; disconnect from this network first.</p>
 </div>
 
 <hr>
