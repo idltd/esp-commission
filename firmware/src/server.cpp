@@ -26,51 +26,63 @@ static const char SETUP_PAGE[] = R"HTML(
 body{background:#000;color:#ccc;font-family:-apple-system,sans-serif;
      padding:24px;max-width:380px;margin:0 auto;font-size:16px;line-height:1.5}
 h2{color:#fff;margin-bottom:4px}
-.ssid{font-family:monospace;font-size:1.1em;color:#3f3;margin-bottom:20px}
-.hint{color:#555;font-size:.85em;padding:12px 14px;background:#0a0a0a;
-      border:1px solid #1a1a1a;border-radius:8px;margin-bottom:20px;line-height:1.5}
-.hint a{color:#3a3a3a}
+.ssid{font-family:monospace;font-size:1.1em;color:#3f3;margin-bottom:24px}
+.step{margin-bottom:24px}
+.step h3{color:#fff;font-size:1em;margin-bottom:8px}
+.step p{color:#777;font-size:.88em;margin-bottom:10px}
+a.app-btn{display:block;padding:14px;background:#0d2b0d;border:1px solid #2a5a2a;
+          border-radius:10px;color:#3f3;text-decoration:none;text-align:center;font-size:1em}
+hr{border:none;border-top:1px solid #1a1a1a;margin:0 0 24px}
 label{display:block;color:#555;font-size:.78em;text-transform:uppercase;
       letter-spacing:.05em;margin:14px 0 4px}
 input,select{width:100%;padding:12px;background:#111;border:1px solid #2a2a2a;
              border-radius:8px;color:#fff;font-size:1em;outline:none}
 input:focus,select:focus{border-color:#444}
 button{width:100%;padding:14px;margin-top:20px;background:#0d2b0d;
-       border:1px solid #2a5a2a;border-radius:10px;color:#3f3;
-       font-size:1em;cursor:pointer}
-#msg{margin-top:16px;text-align:center;color:#888;min-height:1.4em;font-size:.9em}
+       border:1px solid #2a5a2a;border-radius:10px;color:#3f3;font-size:1em;cursor:pointer}
+#msg{margin-top:12px;text-align:center;color:#888;min-height:1.4em;font-size:.9em}
+.note{color:#333;font-size:.75em;margin-top:16px;text-align:center}
 </style>
 </head>
 <body>
 <h2>Device Setup</h2>
 <div class="ssid">__SSID__</div>
-<div class="hint">Open the <strong>ESP Commission</strong> app on your phone, scan the blinking LED, and note the PIN shown &mdash; then fill in the form below.<br><br>
-No app? Disconnect, install from <a href="https://idltd.github.io/esp-commission/">idltd.github.io/esp-commission</a>, then reconnect.</div>
-<form id="f">
-  <label>Home WiFi Network</label>
-  <select id="ssid"><option value="">Loading…</option></select>
-  <label>WiFi Password</label>
-  <input type="password" id="pass" autocomplete="current-password">
-  <label>Device PIN</label>
-  <input type="text" id="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
-         placeholder="4-digit PIN from app" autocomplete="off">
-  <button type="submit" id="btn">Add Device</button>
-</form>
-<div id="msg">Scanning for networks…</div>
+
+<div class="step">
+  <h3>1 &middot; Get your PIN</h3>
+  <p>Open the ESP Commission app, scan the blinking LED, and note the PIN shown.</p>
+  <a class="app-btn" href="https://idltd.github.io/esp-commission/">Open ESP Commission &rarr;</a>
+</div>
+
+<hr>
+
+<div class="step">
+  <h3>2 &middot; Enter your setup details</h3>
+  <form id="f">
+    <label>Home WiFi Network</label>
+    <select id="ssid"><option value="">Loading&hellip;</option></select>
+    <label>WiFi Password</label>
+    <input type="password" id="pass" autocomplete="current-password">
+    <label>PIN from app</label>
+    <input type="text" id="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+           placeholder="4 digits" autocomplete="off">
+    <button type="submit" id="btn">Add Device</button>
+  </form>
+  <div id="msg">Scanning for networks&hellip;</div>
+  <p class="note">Credentials sent directly to this device &mdash; not via the internet.</p>
+</div>
+
 <script>
 var sel=document.getElementById('ssid');
 var msg=document.getElementById('msg');
 var btn=document.getElementById('btn');
-
 fetch('/networks').then(function(r){return r.json();}).then(function(nets){
   if(!nets.length){msg.textContent='Still scanning…';setTimeout(function(){location.reload();},2000);return;}
   sel.innerHTML=nets.map(function(n){
-    return '<option value="'+n.replace(/"/g,'&quot;')+'">'+
-           n.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>';
+    return '<option value="'+n.replace(/"/g,'&quot;')+'">'+n.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>';
   }).join('');
   msg.textContent='';
 }).catch(function(){msg.textContent='Still scanning…';setTimeout(function(){location.reload();},2000);});
-
 document.getElementById('f').addEventListener('submit',function(e){
   e.preventDefault();
   if(!sel.value){msg.textContent='Select a network first.';return;}
@@ -80,16 +92,11 @@ document.getElementById('f').addEventListener('submit',function(e){
   msg.textContent='Sending…';
   fetch('/adopt',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      wifi_ssid:sel.value,
-      wifi_password:document.getElementById('pass').value,
-      pin:pin
-    })
+    body:JSON.stringify({wifi_ssid:sel.value,wifi_password:document.getElementById('pass').value,pin:pin})
   }).then(function(r){
     if(r.ok){
-      msg.textContent='Done! Device is connecting… this page will close.';
-      setTimeout(function(){try{window.close();}catch(e){}},2000);
-    } else {
+      msg.textContent='Done! Device is connecting…';
+    }else{
       btn.disabled=false;
       r.text().then(function(t){msg.textContent='Error: '+t;});
     }

@@ -40,6 +40,14 @@ button.primary:active { background: #1a3a1a; }
 /* ---- Home ---- */
 .logo { font-size: 3em; }
 
+/* install-prompt visible in browser, hidden when running as installed PWA */
+#install-prompt { display: block; }
+#btn-start      { display: none;  }
+@media (display-mode: standalone) {
+  #install-prompt { display: none;  }
+  #btn-start      { display: block; }
+}
+
 /* ---- Scan ---- */
 #screen-scan { padding: 0; justify-content: flex-start; }
 
@@ -117,11 +125,11 @@ button.primary:active { background: #1a3a1a; }
   <div class="logo">📡</div>
   <h1>Device Setup</h1>
 
-  <!-- shown when running in browser, hidden when installed as PWA -->
-  <div id="install-prompt" style="display:none;width:100%;max-width:320px">
+  <!-- shown in browser (not installed) — CSS hides this in standalone mode -->
+  <div id="install-prompt" style="width:100%;max-width:320px">
     <div class="info-box" style="margin-bottom:16px">
       <div class="label">Install required</div>
-      <p style="color:#aaa;font-size:.9em;margin-top:4px">Install this app to your home screen before commissioning a device — the camera works offline only from the installed app, not a browser tab.</p>
+      <p style="color:#aaa;font-size:.9em;margin-top:4px">Install to your home screen, then return to the device setup page and tap <strong style="color:#ccc">Open ESP Commission</strong> to scan the LED.</p>
     </div>
     <button id="btn-install" class="primary">Install App</button>
     <p id="ios-hint" style="display:none;color:#888;font-size:.88em;margin-top:12px;max-width:280px">
@@ -129,8 +137,9 @@ button.primary:active { background: #1a3a1a; }
     </p>
   </div>
 
+  <!-- shown only when running as installed PWA — CSS hides this in browser -->
   <button id="btn-start" class="primary">Add Device</button>
-  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v19</div>
+  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v21</div>
 </div>
 
 <!-- Scan -->
@@ -159,22 +168,18 @@ button.primary:active { background: #1a3a1a; }
 
 <!-- Connect -->
 <div id="screen-connect" class="screen">
-  <h2>Connect to Device</h2>
+  <h2>Your PIN</h2>
   <div class="info-box">
-    <div class="label">1 · Join this WiFi network</div>
-    <div class="value" id="ssid-label">——————</div>
-    <div class="sub">No password — open network</div>
+    <div class="label">Device</div>
+    <div class="value" id="ssid-label">——</div>
+    <div class="sub">Open network — no password</div>
   </div>
   <div class="info-box">
-    <div class="label">2 · Enter this PIN when prompted</div>
-    <div class="value" id="pin-label">——————</div>
-    <div class="sub">Captive portal opens automatically</div>
+    <div class="label">PIN — copied to clipboard</div>
+    <div class="value" id="pin-label" style="font-size:2em;letter-spacing:.18em">——</div>
+    <div class="sub">Enter this in the device setup form</div>
   </div>
-  <div class="info-box">
-    <div class="label">3 · Open device page</div>
-    <div class="value"><a id="device-link" href="#" style="color:#3f3;text-decoration:none">——————</a></div>
-    <div class="sub">iOS: tap to open &middot; Android: find device IP in router</div>
-  </div>
+  <p style="color:#888;font-size:.9em;max-width:280px">Return to the device setup page and enter this PIN to complete configuration.</p>
   <p class="hint" style="color:#f84">LED still flashing? Setup failed — start again.</p>
   <button id="btn-done">Done</button>
 </div>

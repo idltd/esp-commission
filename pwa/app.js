@@ -10,35 +10,30 @@ const isSecure = location.protocol === 'https:'
   || location.hostname === '127.0.0.1';
 if (!isSecure) show('screen-https');
 
-const isInstalled = window.matchMedia('(display-mode: standalone)').matches
-  || window.navigator.standalone === true;
-
-if (!isInstalled && isSecure) {
-  const prompt  = document.getElementById('install-prompt');
-  const btnInst = document.getElementById('btn-install');
-  const btnStart = document.getElementById('btn-start');
-  const iosHint = document.getElementById('ios-hint');
-
-  prompt.style.display = 'block';
-  btnStart.style.marginTop = '8px';
-  btnStart.textContent = 'Continue anyway';
-  btnStart.classList.remove('primary');
-
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (isIOS) {
-    btnInst.style.display = 'none';
-    iosHint.style.display = 'block';
-  }
-
-  btnInst.addEventListener('click', async () => {
-    const evt = window._installEvt;
-    if (!evt) return;
-    evt.prompt();
-    const { outcome } = await evt.userChoice;
-    window._installEvt = null;
-    if (outcome === 'accepted') prompt.style.display = 'none';
-  });
+// iOS standalone detection — CSS display-mode doesn't cover older iOS
+if (window.navigator.standalone === true) {
+  document.getElementById('install-prompt').style.display = 'none';
+  document.getElementById('btn-start').style.display     = 'block';
 }
+
+// iOS: swap install button for share instructions
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone) {
+  document.getElementById('btn-install').style.display = 'none';
+  document.getElementById('ios-hint').style.display    = 'block';
+}
+
+// Android/Chrome: wire up native install prompt
+document.getElementById('btn-install').addEventListener('click', async () => {
+  const evt = window._installEvt;
+  if (!evt) return;
+  evt.prompt();
+  const { outcome } = await evt.userChoice;
+  window._installEvt = null;
+  if (outcome === 'accepted') {
+    document.getElementById('install-prompt').style.display = 'none';
+    document.getElementById('btn-start').style.display      = 'block';
+  }
+});
 
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -191,13 +186,8 @@ function stopCamera() {
 
 // --- Connect screen ---
 function showConnect() {
-  const suffix   = fingerprint.suffix;
-  const hostname = 'esp32-' + suffix.toLowerCase();
-  document.getElementById('ssid-label').textContent = 'ESP-' + suffix;
+  document.getElementById('ssid-label').textContent = 'ESP-' + fingerprint.suffix;
   document.getElementById('pin-label').textContent  = fingerprint.pin;
-  const link = document.getElementById('device-link');
-  link.textContent = hostname + '.local';
-  link.href        = 'http://' + hostname + '.local';
   navigator.clipboard.writeText(fingerprint.pin).catch(() => {});
   show('screen-connect');
 }
