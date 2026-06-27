@@ -76,6 +76,10 @@ button.primary:active { background: #1a3a1a; }
   height: 100%; width: 0%; background: #3f3; border-radius: 2px;
   transition: width .15s ease-out;
 }
+#scan-bar.pulsing {
+  animation: bar-pulse 1.2s ease-in-out infinite;
+}
+@keyframes bar-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
 /* ---- Info boxes ---- */
 .info-box {
@@ -139,7 +143,7 @@ button.primary:active { background: #1a3a1a; }
 
   <!-- shown only when running as installed PWA — CSS hides this in browser -->
   <button id="btn-start" class="primary">Add Device</button>
-  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v22</div>
+  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v24</div>
 </div>
 
 <!-- Scan -->

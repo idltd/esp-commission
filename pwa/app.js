@@ -75,15 +75,18 @@ async function startScan() {
   let fpsWindowStart = 0;
 
   function onProgress(phase, val) {
-    if (phase === 'recording') {
+    if (phase === 'recording' && val < 100) {
+      bar.classList.remove('pulsing');
       counter.textContent = val + '%';
       label.textContent   = 'Recording signal…';
       bar.style.width     = val + '%';
-    } else if (phase === 'scanning') {
-      counter.textContent = '—';
-      label.textContent   = 'Decoding…';
-      bar.style.width     = '95%';
+    } else if (phase === 'recording' || phase === 'scanning') {
+      bar.style.width = '100%';
+      bar.classList.add('pulsing');
+      counter.textContent = '···';
+      label.textContent   = 'Scanning frames…';
     } else {
+      bar.classList.remove('pulsing');
       counter.textContent = '—';
       label.textContent   = 'Point at the blinking LED';
       bar.style.width     = '0%';
@@ -102,6 +105,7 @@ async function startScan() {
 
   const decoder = new BlinkDecoder({
     onDecoded({ suffix, pin }) {
+      bar.classList.remove('pulsing');
       label.textContent = 'Read complete ✓';
       bar.style.width   = '100%';
       fingerprint = { suffix, pin };
