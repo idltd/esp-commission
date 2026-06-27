@@ -101,6 +101,17 @@ button.primary:active { background: #1a3a1a; }
 </head>
 <body>
 
+<!-- HTTPS required -->
+<div id="screen-https" class="screen">
+  <h1>HTTPS required</h1>
+  <p>Camera access is blocked over plain HTTP.</p>
+  <button class="primary" onclick="location.href='https://idltd.github.io/esp-commission/'">Open on GitHub Pages</button>
+  <div class="info-box">
+    <div class="label">Install for offline use</div>
+    <p class="hint">Open on GitHub Pages, then use your browser's <strong style="color:#aaa">Add to Home Screen</strong> option. Installed PWAs retain their HTTPS origin — camera access works offline.</p>
+  </div>
+</div>
+
 <!-- Home -->
 <div id="screen-home" class="screen active">
   <div class="logo">📡</div>

@@ -5,6 +5,11 @@ import { BlinkDecoder } from './decoder.js';
 let fingerprint = null;
 let stream      = null;
 
+const isSecure = location.protocol === 'https:'
+  || location.hostname === 'localhost'
+  || location.hostname === '127.0.0.1';
+if (!isSecure) show('screen-https');
+
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
