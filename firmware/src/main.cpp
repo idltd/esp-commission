@@ -120,22 +120,19 @@ void setup() {
         snprintf(suffix, 5, "%02X%02X", mac[4], mac[5]);
     }
 
-    // 2-digit PIN (0-99) expanded to 4 digits for display and server verification.
-    // Expansion: a=tens, b=units, c=(a+b)%10, d=(a*3+b*7)%10 -> display [a,c,b,d]
-    int n = (int)(esp_random() % 100);
-    int a = n / 10, b = n % 10;
-    int c = (a + b) % 10;
-    int d = (a * 3 + b * 7) % 10;
-    uint8_t pin[4] = { (uint8_t)a, (uint8_t)c, (uint8_t)b, (uint8_t)d };
+    // True 4-digit PIN: each digit independently random 0-9
+    uint8_t pin[4];
+    for (int i = 0; i < 4; i++) pin[i] = (uint8_t)(esp_random() % 10);
 
-    Serial.printf("SSID: ESP-%s  PIN: %d%d%d%d\n", suffix, a, c, b, d);
+    Serial.printf("SSID: ESP-%s  PIN: %d%d%d%d\n", suffix, pin[0], pin[1], pin[2], pin[3]);
 
-    // Pack 4 bytes: suffix nibbles (4-bit hex) | PIN BCD | CRC8
-    uint8_t payload[4];
+    // Pack 5 bytes: suffix nibbles (2 bytes) | PIN BCD (2 bytes) | CRC8
+    uint8_t payload[5];
     payload[0] = (hv(suffix[0]) << 4) | hv(suffix[1]);
     payload[1] = (hv(suffix[2]) << 4) | hv(suffix[3]);
-    payload[2] = ((uint8_t)a << 4) | (uint8_t)b;
-    payload[3] = payload[0] ^ payload[1] ^ payload[2];
+    payload[2] = (pin[0] << 4) | pin[1];   // digits 0,1
+    payload[3] = (pin[2] << 4) | pin[3];   // digits 2,3
+    payload[4] = payload[0] ^ payload[1] ^ payload[2] ^ payload[3];
 
     blink_start(payload);
     server_start(suffix, pin);

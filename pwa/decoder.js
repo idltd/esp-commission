@@ -10,14 +10,12 @@
 //   PRE_GAP_MS  = 300 ms  (LOW gap after preamble, before data)
 //   POST_MS     = 500 ms  (trailing LOW before next cycle)
 //
-// Frame: 32 bits (4 bytes, MSB first)
+// Frame: 40 bits (5 bytes, MSB first)
 //   byte 0: suffix hex nibbles 0-1  (4 bits each, 0-15)
 //   byte 1: suffix hex nibbles 2-3
-//   byte 2: PIN BCD  high=tens low=units, 0-99
-//   byte 3: CRC8 = byte0 ^ byte1 ^ byte2
-//
-// PIN display expansion: n=tens*10+units
-//   a=tens, b=units, c=(a+b)%10, d=(a*3+b*7)%10 → display [a,c,b,d]
+//   byte 2: PIN BCD digits 0,1  (high nibble=digit0, low nibble=digit1)
+//   byte 3: PIN BCD digits 2,3  (high nibble=digit2, low nibble=digit3)
+//   byte 4: CRC8 = byte0 ^ byte1 ^ byte2 ^ byte3
 //
 // Decode strategy:
 //   1. Measure HIGH pulse widths from buffer. <250ms=0, >=250ms=1.
@@ -30,7 +28,7 @@ const PULSE_SHORT = 150;   // ms  firmware PULSE_SHORT
 const PULSE_LONG  = 350;   // ms  firmware PULSE_LONG
 const THRESHOLD   = (PULSE_SHORT + PULSE_LONG) / 2;  // 250 ms
 const PRE_MIN     = 600;   // ms  min HIGH for preamble (> PULSE_LONG, unambiguous)
-const BITS_FRAME  = 32;
+const BITS_FRAME  = 40;
 const BUF_MS      = 25000; // ms  rolling buffer
 const SCAN_INT    = 800;   // ms  scan cadence
 const READY_MS    = 20000; // ms  expected max time for one full cycle in buffer
@@ -172,30 +170,28 @@ export class BlinkDecoder {
 
   _tryDecode(bits, label) {
     const H = v => v.toString(16).padStart(2, '0').toUpperCase();
-    const bytes = Array.from({ length: 4 }, (_, i) =>
+    const bytes = Array.from({ length: 5 }, (_, i) =>
       bits.slice(i * 8, i * 8 + 8).reduce((v, b, j) => v | (b << (7 - j)), 0)
     );
-    const [b0, b1, b2, b3] = bytes;
+    const [b0, b1, b2, b3, b4] = bytes;
 
-    const crc = b0 ^ b1 ^ b2;
-    if (crc !== b3) {
-      this._err(`bad_crc ${H(crc)}!=${H(b3)} [${label}]`);
+    const crc = b0 ^ b1 ^ b2 ^ b3;
+    if (crc !== b4) {
+      this._err(`bad_crc ${H(crc)}!=${H(b4)} [${label}]`);
       return false;
     }
 
-    // Suffix: four 4-bit hex nibbles — all values 0-15 are valid hex chars
+    // Suffix: four 4-bit hex nibbles
     const suffix = [b0 >> 4, b0 & 0xF, b1 >> 4, b1 & 0xF].map(n => HEX[n]).join('');
 
-    // PIN: BCD 0-99 — both nibbles must be decimal digits
-    const tens = (b2 >> 4) & 0xF, units = b2 & 0xF;
-    if (tens > 9 || units > 9) {
-      this._err(`bad_pin nibbles ${tens},${units} [${label}]`);
+    // PIN: four BCD digits, each nibble must be 0-9
+    const d = [(b2 >> 4) & 0xF, b2 & 0xF, (b3 >> 4) & 0xF, b3 & 0xF];
+    if (d.some(n => n > 9)) {
+      this._err(`bad_pin nibbles ${d} [${label}]`);
       return false;
     }
 
-    // Expand 2-digit PIN to 4-digit display code
-    const a = tens, b = units;
-    const pin = `${a}${(a + b) % 10}${b}${(a * 3 + b * 7) % 10}`;
+    const pin = d.join('');
 
     this._dbg(`OK suffix=${suffix} pin=${pin} [${label}]`);
     this._votes.fill(0); this._voteCount = 0;

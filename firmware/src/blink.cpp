@@ -13,7 +13,7 @@ static const int PRE_GAP_MS   = 300;   // ms  LOW gap between preamble and data
 static const int POST_MS      = 500;   // ms  trailing LOW before next cycle
 
 static TaskHandle_t _task = nullptr;
-static uint8_t      _payload[4];
+static uint8_t      _payload[5];
 
 static void send_bit(bool bit) {
     led_set(true);
@@ -29,7 +29,7 @@ static void blink_task(void *) {
         led_set(false);
         vTaskDelay(pdMS_TO_TICKS(PRE_GAP_MS));
 
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 5; i++)
             for (int b = 7; b >= 0; b--)
                 send_bit((_payload[i] >> b) & 1);
 
@@ -38,9 +38,9 @@ static void blink_task(void *) {
     }
 }
 
-void blink_start(const uint8_t payload[4]) {
+void blink_start(const uint8_t payload[5]) {
     blink_stop();
-    memcpy(_payload, payload, 4);
+    memcpy(_payload, payload, 5);
     xTaskCreate(blink_task, "blink", 2048, nullptr, 1, &_task);
 }
 
