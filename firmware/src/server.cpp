@@ -97,7 +97,15 @@ document.getElementById('f').addEventListener('submit',function(e){
     body:JSON.stringify({wifi_ssid:sel.value,wifi_password:document.getElementById('pass').value,pin:pin})
   }).then(function(r){
     if(r.ok){
-      msg.textContent='Done! Device is connecting…';
+      r.json().then(function(j){
+        document.getElementById('f').style.display='none';
+        msg.style.cssText='color:#ccc;font-size:.95em;margin-top:8px;line-height:1.8';
+        var host=j.name||'your-device';
+        msg.innerHTML='&#10003; Device is joining your network.<br>'
+          +'<span style="color:#777;font-size:.88em">Reconnect to your home WiFi, then open:</span><br>'
+          +'<a href="http://'+host+'.local" style="color:#3f3;font-family:monospace">http://'+host+'.local</a>'
+          +'<br><span style="color:#555;font-size:.8em">OTA firmware updates available there.</span>';
+      });
     }else{
       btn.disabled=false;
       r.text().then(function(t){msg.textContent='Error: '+t;});
@@ -203,7 +211,9 @@ static void handle_adopt() {
     prefs.putUChar("adopted", 1);
     prefs.end();
 
-    _srv.send(200, "application/json", "{\"ok\":true}");
+    char resp[64];
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"name\":\"%s\"}", _default_name);
+    _srv.send(200, "application/json", resp);
     _pin_attempts = 3;  // prevent re-adoption
     _adopted      = true;
 }
