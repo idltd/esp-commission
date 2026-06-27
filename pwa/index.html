@@ -116,9 +116,21 @@ button.primary:active { background: #1a3a1a; }
 <div id="screen-home" class="screen active">
   <div class="logo">📡</div>
   <h1>Device Setup</h1>
-  <p>Add a new device to your home network. Point your camera at the device's LED when ready.</p>
+
+  <!-- shown when running in browser, hidden when installed as PWA -->
+  <div id="install-prompt" style="display:none;width:100%;max-width:320px">
+    <div class="info-box" style="margin-bottom:16px">
+      <div class="label">Install required</div>
+      <p style="color:#aaa;font-size:.9em;margin-top:4px">Install this app to your home screen before commissioning a device — the camera works offline only from the installed app, not a browser tab.</p>
+    </div>
+    <button id="btn-install" class="primary">Install App</button>
+    <p id="ios-hint" style="display:none;color:#888;font-size:.88em;margin-top:12px;max-width:280px">
+      Tap <strong style="color:#aaa">⬆ Share</strong> then <strong style="color:#aaa">Add to Home Screen</strong>
+    </p>
+  </div>
+
   <button id="btn-start" class="primary">Add Device</button>
-  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v16</div>
+  <div style="position:absolute;bottom:16px;font-size:11px;color:#333;font-family:monospace">v19</div>
 </div>
 
 <!-- Scan -->
@@ -174,6 +186,7 @@ button.primary:active { background: #1a3a1a; }
   <button id="btn-retry">Start Again</button>
 </div>
 
+<script>window._installEvt=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window._installEvt=e;});</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

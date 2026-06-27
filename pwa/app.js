@@ -10,6 +10,36 @@ const isSecure = location.protocol === 'https:'
   || location.hostname === '127.0.0.1';
 if (!isSecure) show('screen-https');
 
+const isInstalled = window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+
+if (!isInstalled && isSecure) {
+  const prompt  = document.getElementById('install-prompt');
+  const btnInst = document.getElementById('btn-install');
+  const btnStart = document.getElementById('btn-start');
+  const iosHint = document.getElementById('ios-hint');
+
+  prompt.style.display = 'block';
+  btnStart.style.marginTop = '8px';
+  btnStart.textContent = 'Continue anyway';
+  btnStart.classList.remove('primary');
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS) {
+    btnInst.style.display = 'none';
+    iosHint.style.display = 'block';
+  }
+
+  btnInst.addEventListener('click', async () => {
+    const evt = window._installEvt;
+    if (!evt) return;
+    evt.prompt();
+    const { outcome } = await evt.userChoice;
+    window._installEvt = null;
+    if (outcome === 'accepted') prompt.style.display = 'none';
+  });
+}
+
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
