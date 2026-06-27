@@ -3,34 +3,43 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LED Sim</title>
+<title>LED Sim — PWM</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; background: #000; overflow: hidden; }
+html, body { height: 100%; background: #000; overflow: hidden; color: #ccc; font-family: monospace; }
 
 #led {
   position: fixed;
-  width: 220px; height: 220px; border-radius: 50%;
-  top: calc(50% - 160px); left: calc(50% - 110px);
+  width: 200px; height: 200px; border-radius: 50%;
+  top: calc(50% - 200px); left: calc(50% - 100px);
   background: #111;
 }
 #led.on {
   background: #fff;
-  box-shadow: 0 0 120px 60px rgba(255,255,255,0.8);
+  box-shadow: 0 0 120px 60px rgba(255,255,255,0.85);
 }
 
 #panel {
   position: fixed; bottom: 0; left: 0; right: 0;
-  background: #0d0d0d; border-top: 1px solid #1e1e1e;
-  padding: 14px 12px;
+  background: #080808; border-top: 1px solid #1a1a1a;
+  padding: 14px 16px 22px;
 }
-.rate-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.rbtn {
-  flex: 1; padding: 11px 0; border: 1px solid #333; border-radius: 5px;
-  background: #111; color: #555; font-family: monospace; font-size: 14px; cursor: pointer;
+
+.presets { display: flex; gap: 6px; margin-bottom: 14px; }
+.preset {
+  flex: 1; padding: 8px 0; border: 1px solid #222; border-radius: 6px;
+  background: #111; color: #444; font-size: 11px; cursor: pointer; text-align: center;
+  line-height: 1.6;
 }
-.rbtn.on { border-color: #fff; color: #fff; background: #1a1a1a; }
-#info { color: #444; font-family: monospace; font-size: 12px; text-align: center; }
+.preset.on { border-color: #3f3; color: #3f3; background: #0a180a; }
+
+.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
+.row label { width: 50px; color: #555; text-align: right; flex-shrink: 0; }
+.row input[type=range] { flex: 1; accent-color: #3f3; }
+.row .val { width: 54px; color: #3f3; text-align: right; flex-shrink: 0; }
+
+#info { color: #333; font-size: 11px; margin-top: 10px; line-height: 1.9; }
+#info b { color: #555; }
 </style>
 </head>
 <body>
@@ -38,41 +47,93 @@ html, body { height: 100%; background: #000; overflow: hidden; }
 <div id="led"></div>
 
 <div id="panel">
-  <div class="rate-row">
-    <button class="rbtn" data-bps="1">1 bps</button>
-    <button class="rbtn" data-bps="2">2 bps</button>
-    <button class="rbtn on" data-bps="5">5 bps</button>
-    <button class="rbtn" data-bps="10">10 bps</button>
+  <div class="presets">
+    <button class="preset" data-s="70"  data-l="180" data-g="60">Fastest<br><span style="color:#333">70/180/60</span></button>
+    <button class="preset" data-s="100" data-l="250" data-g="80">Faster<br><span style="color:#333">100/250/80</span></button>
+    <button class="preset on" data-s="150" data-l="350" data-g="200">Current<br><span style="color:#333">150/350/200</span></button>
   </div>
+
+  <div class="row">
+    <label>SHORT</label>
+    <input id="sl-s" type="range" min="40" max="250" value="150">
+    <span class="val" id="vl-s">150ms</span>
+  </div>
+  <div class="row">
+    <label>LONG</label>
+    <input id="sl-l" type="range" min="80" max="500" value="350">
+    <span class="val" id="vl-l">350ms</span>
+  </div>
+  <div class="row">
+    <label>GAP</label>
+    <input id="sl-g" type="range" min="30" max="250" value="200">
+    <span class="val" id="vl-g">200ms</span>
+  </div>
+
   <div id="info"></div>
 </div>
 
 <script>
 'use strict';
-const led  = document.getElementById('led');
-const info = document.getElementById('info');
-let state = false, timer = null;
+const led = document.getElementById('led');
 
-function start(bps) {
-  clearInterval(timer);
-  const half = Math.round(500 / bps);
-  timer = setInterval(() => {
-    state = !state;
-    led.classList.toggle('on', state);
-    info.textContent = bps + ' bps  |  ' + half + ' ms half-period  |  ' + (state ? 'ON' : 'off');
-  }, half);
-  info.textContent = bps + ' bps  |  ' + half + ' ms half-period';
+let S = 150, L = 350, G = 200;
+let phase = 'gap', bit = 0, tgt = 0;
+
+function updateInfo() {
+  const thresh = Math.round((S + L) / 2);
+  const avg    = (S + G + L + G) / 2;   // avg bit period
+  const bps    = (1000 / avg).toFixed(2);
+  const frame  = Math.round((1000 + 300 + 32 * avg + 500) / 1000);
+  document.getElementById('info').innerHTML =
+    '<b>threshold</b> ' + thresh + 'ms &nbsp;|&nbsp; '
+    + '<b>bit0</b> ' + (S+G) + 'ms &nbsp;<b>bit1</b> ' + (L+G) + 'ms &nbsp;avg ' + Math.round(avg) + 'ms<br>'
+    + '<b>' + bps + ' bps</b> &nbsp;|&nbsp; 32-bit frame ≈ ' + frame + 's';
 }
 
-document.querySelector('.rate-row').addEventListener('click', e => {
-  const btn = e.target.closest('.rbtn');
+function tick(ts) {
+  if (ts >= tgt) {
+    if (phase === 'high') {
+      led.classList.remove('on');
+      phase = 'gap';
+      tgt = ts + G;
+    } else {
+      bit ^= 1;
+      led.classList.add('on');
+      phase = 'high';
+      tgt = ts + (bit ? L : S);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+function setParams(s, l, g) {
+  S = s; L = l; G = g;
+  document.getElementById('sl-s').value = s; document.getElementById('vl-s').textContent = s + 'ms';
+  document.getElementById('sl-l').value = l; document.getElementById('vl-l').textContent = l + 'ms';
+  document.getElementById('sl-g').value = g; document.getElementById('vl-g').textContent = g + 'ms';
+  updateInfo();
+}
+
+document.querySelector('.presets').addEventListener('click', e => {
+  const btn = e.target.closest('.preset');
   if (!btn) return;
-  document.querySelectorAll('.rbtn').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.preset').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
-  start(+btn.dataset.bps);
+  setParams(+btn.dataset.s, +btn.dataset.l, +btn.dataset.g);
 });
 
-start(5);
+[['sl-s','vl-s', v => S=v], ['sl-l','vl-l', v => L=v], ['sl-g','vl-g', v => G=v]].forEach(([id,vi,fn]) => {
+  document.getElementById(id).addEventListener('input', function() {
+    document.getElementById(vi).textContent = this.value + 'ms';
+    document.querySelectorAll('.preset').forEach(b => b.classList.remove('on'));
+    fn(+this.value);
+    updateInfo();
+  });
+});
+
+updateInfo();
+tgt = performance.now();
+requestAnimationFrame(tick);
 </script>
 </body>
 </html>

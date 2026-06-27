@@ -16,7 +16,7 @@ html, body {
 #vid      { position: absolute; opacity: 0; pointer-events: none; }
 
 #overlay {
-  position: absolute; inset: 0; background: rgba(0,0,0,.85);
+  position: absolute; inset: 0; background: rgba(0,0,0,.88);
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 14px; cursor: pointer;
 }
@@ -24,27 +24,53 @@ html, body {
 #overlay .big  { color: #fff; font-size: 1.2em; }
 #overlay .hint { color: #555; font-size: .82em; text-align: center; padding: 0 24px; }
 
-/* scrolling signal strip */
-#strip { flex-shrink: 0; height: 36px; width: 100%; display: block; background: #000; }
+#strip { flex-shrink: 0; height: 32px; width: 100%; display: block; background: #000; }
 
-/* stats row */
 #stats {
   flex-shrink: 0;
   display: grid; grid-template-columns: repeat(4, 1fr);
   border-top: 1px solid #1a1a1a;
 }
-.st { padding: 10px 8px; border-right: 1px solid #111; }
+.st { padding: 7px 6px; border-right: 1px solid #111; }
 .st:last-child { border-right: none; }
-.sl { color: #333; font-size: 10px; margin-bottom: 3px; text-transform: uppercase; }
-.sv { font-size: 16px; font-weight: bold; color: #2a2a2a; }
+.sl { color: #2a2a2a; font-size: 9px; margin-bottom: 2px; text-transform: uppercase; }
+.sv { font-size: 14px; font-weight: bold; color: #2a2a2a; }
 .sv.lit { color: #3f3; }
+.sv.warn { color: #f84; }
 
-/* bps history table */
-#log {
-  flex-shrink: 0; border-top: 1px solid #1a1a1a;
-  padding: 8px 12px; max-height: 100px; overflow-y: auto;
+/* histogram */
+#hist-section {
+  flex-shrink: 0; border-top: 1px solid #1a1a1a; background: #050505;
+  padding: 6px 8px 4px;
 }
-#log-inner { color: #444; font-size: 11px; line-height: 1.8; }
+#hist { display: block; width: 100%; height: 64px; }
+.hist-axis {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: #2a2a2a; margin-top: 1px;
+}
+#hist-peaks {
+  font-size: 10px; margin-top: 4px; color: #333;
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+
+/* limits */
+#limits {
+  flex-shrink: 0; border-top: 1px solid #1a1a1a;
+  padding: 5px 8px; font-size: 10px; color: #333; line-height: 1.9;
+  white-space: pre;
+}
+
+/* log */
+#log-wrap {
+  flex-shrink: 0; border-top: 1px solid #1a1a1a;
+  padding: 5px 8px; display: flex; align-items: flex-start; gap: 8px;
+}
+#log { flex: 1; font-size: 10px; color: #333; max-height: 56px; overflow-y: auto; }
+#btn-copy {
+  flex-shrink: 0; font-size: 10px; color: #444; background: none;
+  border: 1px solid #222; border-radius: 4px; padding: 2px 7px; cursor: pointer;
+  font-family: monospace;
+}
 </style>
 </head>
 <body>
@@ -54,7 +80,7 @@ html, body {
   <canvas id="preview"></canvas>
   <div id="overlay">
     <div class="big">▶ Tap to start camera</div>
-    <div class="hint">Point at LED. Green box = sample zone.</div>
+    <div class="hint">Point at the LED or screen. Green box = sample zone.</div>
   </div>
 </div>
 
@@ -62,69 +88,157 @@ html, body {
 
 <div id="stats">
   <div class="st"><div class="sl">brightness</div><div class="sv" id="sb">—</div></div>
-  <div class="st"><div class="sl">threshold</div> <div class="sv" id="st">—</div></div>
+  <div class="st"><div class="sl">cam fps</div>   <div class="sv" id="sf">—</div></div>
   <div class="st"><div class="sl">trans/s</div>   <div class="sv" id="sr">—</div></div>
   <div class="st"><div class="sl">est. bps</div>  <div class="sv" id="ss">—</div></div>
 </div>
 
-<div id="log"><div id="log-inner">bps log will appear here…</div></div>
+<div id="hist-section">
+  <canvas id="hist"></canvas>
+  <div class="hist-axis"><span>0</span><span>100</span><span>200</span><span>300</span><span>400</span><span>500ms</span></div>
+  <div id="hist-peaks">waiting for pulses…</div>
+</div>
+
+<div id="limits">—</div>
+
+<div id="log-wrap">
+  <div id="log">bps log will appear here…</div>
+  <button id="btn-copy">Copy all</button>
+</div>
 
 <script>
 'use strict';
 
-const vid    = document.getElementById('vid');
-const pre    = document.getElementById('preview');
-const pctx   = pre.getContext('2d');
-const strip  = document.getElementById('strip');
-const sctx   = strip.getContext('2d');
+const vid  = document.getElementById('vid');
+const pre  = document.getElementById('preview');
+const pctx = pre.getContext('2d');
+const strip = document.getElementById('strip');
+const sctx = strip.getContext('2d');
+const histCvs = document.getElementById('hist');
+const hctx = histCvs.getContext('2d');
 
-// rolling min/max for adaptive threshold (~3 s at 30 fps)
-const thBuf = [];
 const TH_WIN = 90;
+const thBuf = [], sigBuf = [], trans = [];
+const pulseWidths = [];  // measured HIGH durations (ms)
 
-// scrolling signal strip
-const sigBuf = [];
+let prevBright = null, edgeStart = null;
+let lastVidTime = -1;
+const fpsSamples = [];
+let measuredFps = 0;
 
-// transition timestamps (last 3 s)
-let prevBright = null;
-const trans = [];
-
-// bps log
-const bpsHistory = [];
-let lastLoggedBps = null;
-let stableCount = 0;
-
-function sv(id, val, active) {
+// ---- stats helpers ----
+function sv(id, val, cls) {
   const el = document.getElementById(id);
   el.textContent = val;
-  el.className = 'sv' + (active ? ' lit' : '');
+  el.className = 'sv' + (cls ? ' ' + cls : '');
 }
 
-function logBps(bps) {
-  if (Math.abs(bps - lastLoggedBps) < 0.3) {
-    stableCount++;
-  } else {
-    stableCount = 0;
-    lastLoggedBps = bps;
+// ---- histogram ----
+const BINS = 50, BIN_MS = 10;  // 0–500ms
+
+function drawHistogram() {
+  const W = histCvs.width, H = histCvs.height;
+  if (!W || !H || !pulseWidths.length) return;
+
+  const THRESH = 250;
+  const bins = new Array(BINS).fill(0);
+  for (const w of pulseWidths) {
+    const b = Math.min(Math.floor(w / BIN_MS), BINS - 1);
+    bins[b]++;
   }
-  if (stableCount === 10) {  // stable for ~1 s → log it
-    const t = new Date().toLocaleTimeString();
-    bpsHistory.unshift(t + '  →  ' + bps.toFixed(1) + ' bps');
-    if (bpsHistory.length > 20) bpsHistory.pop();
-    document.getElementById('log-inner').textContent = bpsHistory.join('\n');
+  const maxC = Math.max(1, ...bins);
+  const bw = W / BINS;
+
+  hctx.clearRect(0, 0, W, H);
+
+  // threshold line
+  const thX = (THRESH / BIN_MS) * bw;
+  hctx.strokeStyle = '#444';
+  hctx.lineWidth = 1;
+  hctx.setLineDash([2, 3]);
+  hctx.beginPath(); hctx.moveTo(thX, 0); hctx.lineTo(thX, H); hctx.stroke();
+  hctx.setLineDash([]);
+
+  // bars
+  for (let i = 0; i < BINS; i++) {
+    if (!bins[i]) continue;
+    const h = (bins[i] / maxC) * H;
+    hctx.fillStyle = (i * BIN_MS < THRESH) ? '#833' : '#383';
+    hctx.fillRect(i * bw, H - h, Math.max(bw - 1, 1), h);
   }
+
+  // find peaks
+  let sP = -1, sM = 0, lP = -1, lM = 0;
+  for (let i = 0; i < BINS; i++) {
+    const ms = i * BIN_MS;
+    if (ms < THRESH && bins[i] > sM) { sM = bins[i]; sP = ms + BIN_MS/2; }
+    if (ms >= THRESH && bins[i] > lM) { lM = bins[i]; lP = ms + BIN_MS/2; }
+  }
+
+  const peaksEl = document.getElementById('hist-peaks');
+  const parts = [];
+  if (sP >= 0) parts.push('<span style="color:#a55">SHORT ~' + Math.round(sP) + 'ms</span>');
+  if (lP >= 0) parts.push('<span style="color:#5a5">LONG ~' + Math.round(lP) + 'ms</span>');
+  if (sP >= 0 && lP >= 0) {
+    const sep = lP - sP;
+    const ok = sep > 80;
+    parts.push('<span style="color:' + (ok ? '#5a5' : '#a55') + '">sep ' + Math.round(sep) + 'ms ' + (ok ? '✓' : '⚠ too close') + '</span>');
+  }
+  parts.push('<span style="color:#333">n=' + pulseWidths.length + '</span>');
+  peaksEl.innerHTML = parts.join('');
 }
 
+// ---- theoretical limits ----
+function updateLimits(fps) {
+  const fMs  = 1000 / fps;
+  const minP = Math.ceil(3 * fMs / 10) * 10;
+  const errMs = Math.round(fMs);
+  const recS = Math.max(100, Math.ceil(4 * fMs / 10) * 10);
+  const recL = Math.round(recS * 2.4 / 10) * 10;
+  const recG = Math.max(60, Math.ceil(2 * fMs / 10) * 10);
+  const recT = Math.round((recS + recL) / 20) * 10;
+  const b0 = recS + recG, b1 = recL + recG;
+  const bps = (1000 / ((b0 + b1) / 2)).toFixed(1);
+  document.getElementById('limits').textContent =
+    fps.toFixed(1) + ' fps  frame=' + Math.round(fMs) + 'ms  edge error ±' + errMs + 'ms\n'
+    + 'min pulse ' + minP + 'ms  |  recommended: S=' + recS + ' L=' + recL + ' G=' + recG + ' T=' + recT + '  → ' + bps + ' bps';
+}
+
+// ---- log ----
+const logLines = [];
+let lastBps = null, stableN = 0;
+function addLog(line) {
+  logLines.unshift(line);
+  if (logLines.length > 40) logLines.pop();
+  document.getElementById('log').textContent = logLines.join('\n');
+}
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const stats = document.getElementById('limits').textContent;
+  const peaks = document.getElementById('hist-peaks').innerText;
+  navigator.clipboard.writeText([stats, peaks, '', ...logLines].join('\n')).catch(() => {});
+});
+
+// ---- main loop ----
 function sample(ts) {
   const vw = vid.videoWidth, vh = vid.videoHeight;
   if (!vw || !vh) return;
 
-  // draw video to canvas
+  // camera fps from vid.currentTime
+  if (vid.currentTime !== lastVidTime) {
+    lastVidTime = vid.currentTime;
+    fpsSamples.push(ts);
+    while (fpsSamples.length && fpsSamples[0] < ts - 5000) fpsSamples.shift();
+    if (fpsSamples.length >= 5)
+      measuredFps = (fpsSamples.length - 1) / ((ts - fpsSamples[0]) / 1000);
+  }
+
+  // draw frame
   const cw = pre.width, ch = pre.height;
   const sc = Math.max(cw / vw, ch / vh);
   pctx.drawImage(vid, (cw - vw*sc)/2, (ch - vh*sc)/2, vw*sc, vh*sc);
 
-  // sample centre box (15% of smallest dimension)
+  // sample centre box
   const sz = Math.max(20, Math.min(cw, ch) * 0.15 | 0);
   const bx = (cw - sz) >> 1, by = (ch - sz) >> 1;
   const px = pctx.getImageData(bx, by, sz, sz).data;
@@ -133,7 +247,6 @@ function sample(ts) {
     s += 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
   const b = s / (sz * sz);
 
-  // adaptive threshold
   thBuf.push(b);
   if (thBuf.length > TH_WIN) thBuf.shift();
   const mn = Math.min(...thBuf), mx = Math.max(...thBuf);
@@ -141,15 +254,25 @@ function sample(ts) {
   const valid  = (mx - mn) > 15;
   const bright = valid && b > thresh;
 
-  // draw sample box
-  pctx.strokeStyle = bright ? '#3f3' : '#f44';
-  pctx.lineWidth   = 2;
+  pctx.strokeStyle = bright ? '#3f3' : (valid ? '#555' : '#333');
+  pctx.lineWidth = 2;
   pctx.strokeRect(bx, by, sz, sz);
 
-  // transitions
-  if (valid && prevBright !== null && bright !== prevBright)
-    trans.push(ts);
-  prevBright = bright;
+  // edge detection + pulse timing
+  if (valid && prevBright !== null) {
+    if (bright && !prevBright) {
+      edgeStart = ts;
+      trans.push(ts);
+    } else if (!bright && prevBright && edgeStart !== null) {
+      const w = ts - edgeStart;
+      if (w > 20 && w < 700) {
+        pulseWidths.push(w);
+        if (pulseWidths.length > 200) pulseWidths.shift();
+      }
+      edgeStart = null;
+    }
+  }
+  prevBright = valid ? bright : prevBright;
   while (trans.length && trans[0] < ts - 3000) trans.shift();
 
   const tps = trans.length / 3;
@@ -161,31 +284,38 @@ function sample(ts) {
   sctx.fillStyle = '#000';
   sctx.fillRect(0, 0, strip.width, strip.height);
   for (let i = 0; i < sigBuf.length; i++) {
-    sctx.fillStyle = sigBuf[i] ? '#3f3' : '#111';
-    sctx.fillRect(i, 4, 1, strip.height - 8);
+    sctx.fillStyle = sigBuf[i] ? '#3f3' : '#0a0a0a';
+    sctx.fillRect(i, 3, 1, strip.height - 6);
   }
 
-  sv('sb', Math.round(b),                  bright);
-  sv('st', valid ? Math.round(thresh) : '—', valid);
-  sv('sr', tps > 0 ? tps.toFixed(1) : '—',  tps > 0);
-  sv('ss', bps > 0.1 ? bps.toFixed(1) : '—', bps > 0.1);
+  sv('sb', Math.round(b), bright ? 'lit' : '');
+  if (measuredFps > 0) sv('sf', measuredFps.toFixed(1), measuredFps >= 28 ? 'lit' : measuredFps >= 20 ? 'warn' : '');
+  else sv('sf', '—', '');
+  sv('sr', tps > 0 ? tps.toFixed(1) : '—', tps > 0 ? 'lit' : '');
+  sv('ss', bps > 0.1 ? bps.toFixed(1) : '—', bps > 0.1 ? 'lit' : '');
 
-  if (bps > 0.1) logBps(bps);
+  if (bps > 0.1) {
+    if (Math.abs(bps - lastBps) < 0.3) { stableN++; } else { stableN = 0; lastBps = bps; }
+    if (stableN === 10)
+      addLog(new Date().toLocaleTimeString() + '  ' + bps.toFixed(1) + ' bps  fps:' + (measuredFps > 0 ? measuredFps.toFixed(0) : '?'));
+  }
+
+  drawHistogram();
+  if (measuredFps > 5) updateLimits(measuredFps);
 }
 
 function tick(ts) { sample(ts); requestAnimationFrame(tick); }
 
 function resize() {
-  pre.width    = pre.offsetWidth;
-  pre.height   = pre.offsetHeight;
-  strip.width  = strip.offsetWidth;
-  strip.height = strip.offsetHeight;
+  pre.width    = pre.offsetWidth;  pre.height   = pre.offsetHeight;
+  strip.width  = strip.offsetWidth; strip.height = strip.offsetHeight;
+  histCvs.width = histCvs.offsetWidth; histCvs.height = histCvs.offsetHeight;
   sigBuf.length = 0;
 }
 window.addEventListener('resize', resize);
 resize();
 
-document.getElementById('overlay').addEventListener('click', async function () {
+document.getElementById('overlay').addEventListener('click', async function() {
   this.querySelector('.big').textContent = 'Opening camera…';
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -196,7 +326,7 @@ document.getElementById('overlay').addEventListener('click', async function () {
     vid.play();
     this.classList.add('gone');
     requestAnimationFrame(tick);
-  } catch (e) {
+  } catch(e) {
     this.querySelector('.big').textContent = '⚠ ' + e.message;
   }
 });
