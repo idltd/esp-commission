@@ -1,5 +1,9 @@
 # ESP32 Optical Onboarding System — Project Kickoff
 
+> **Historical — original design, not what was built.**
+> The X25519 / key-hash approach described here was abandoned during implementation.
+> See `docs/kickoff-v2.md` for what was actually built and why it diverged.
+
 ## Overview
 
 A secure, user-friendly onboarding system for ESP32-based IoT sensors targeting non-technical home users. The core insight: use the ESP32's LED as a one-way optical channel to bootstrap trust — the device blinks a fingerprint of its public key, a PWA reads it via phone camera, and this is used to verify the device identity before handing over WiFi credentials. No app store. No pre-shared secrets. No factory-printed QR codes.

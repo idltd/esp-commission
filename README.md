@@ -45,8 +45,8 @@ the bit value, with a fixed LOW gap between every bit.
 
 | Byte | Content |
 |------|---------|
-| 0    | MAC suffix nibbles \[3\]\[2\] |
-| 1    | MAC suffix nibbles \[1\]\[0\] |
+| 0    | suffix nibbles 0–1 — first two hex chars of the 4-char suffix |
+| 1    | suffix nibbles 2–3 — last two hex chars of the 4-char suffix  |
 | 2    | PIN BCD — high nibble = tens, low = units (0–99) |
 | 3    | CRC8 = byte0 ^ byte1 ^ byte2 |
 
@@ -57,11 +57,14 @@ across a room: `[a, (a+b)%10, b, (a×3+b×7)%10]` where a = tens, b = units.
 
 ## Hardware targets
 
-| PlatformIO env    | Board                   | LED pin              | Button |
-|-------------------|-------------------------|----------------------|--------|
-| `esp32dev`        | ESP32 dev module        | GPIO 2               | GPIO 0 |
-| `c3-supermini`    | ESP32-C3 Super Mini     | GPIO 8 (active-low)  | GPIO 9 |
-| `c3-supermini-ota`| ESP32-C3 Super Mini     | OTA upload only      | —      |
+| PlatformIO env     | Board               | LED pin              | Button |
+|--------------------|---------------------|----------------------|--------|
+| `esp32dev`         | ESP32 dev module    | GPIO 2 (active-high) | GPIO 0 |
+| `esp32dev-ota`     | ESP32 dev module    | GPIO 2 (active-high) | GPIO 0 |
+| `c3-supermini`     | ESP32-C3 Super Mini | GPIO 8 (active-low)  | GPIO 9 |
+| `c3-supermini-ota` | ESP32-C3 Super Mini | GPIO 8 (active-low)  | GPIO 9 |
+
+The `-ota` envs use `upload_protocol = espota` — flash via USB first, then push OTA for subsequent updates.
 
 Triple-tap the button within 2 seconds to factory-reset any device.
 
@@ -100,10 +103,14 @@ Once commissioned the device:
 Requires [PlatformIO](https://platformio.org/).
 
 ```bash
-# Flash via USB
+# Flash via USB (ESP32 dev module)
+pio run -e esp32dev -t upload
+
+# Flash via USB (ESP32-C3 Super Mini)
 pio run -e c3-supermini -t upload
 
 # OTA push (device must already be on the network)
+pio run -e esp32dev-ota -t upload
 pio run -e c3-supermini-ota -t upload
 ```
 
