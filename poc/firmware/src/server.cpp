@@ -115,6 +115,7 @@ html,body{height:100%;background:#000;color:#eee;font-family:monospace;
     <div class="ri"><div class="rv" id="rc-l">&#8212;</div><div class="rl">LONG</div></div>
     <div class="ri"><div class="rv" id="rc-g">&#8212;</div><div class="rl">GAP</div></div>
     <div class="ri"><div class="rv" id="rc-t">&#8212;</div><div class="rl">THRESH</div></div>
+    <div class="ri"><div class="rv" id="rc-b" style="color:#ff9">&#8212;</div><div class="rl">est bps</div></div>
     <button id="btn-app" disabled>Apply to ESP</button>
     <button id="btn-tog">Manual &#9660;</button>
   </div>
@@ -203,6 +204,8 @@ function updRec(){
   document.getElementById('rc-l').textContent=recL+'ms';
   document.getElementById('rc-g').textContent=recG+'ms';
   document.getElementById('rc-t').textContent=recT+'ms';
+  var recBps=(2000/(recS+recL+2*recG)).toFixed(2);
+  document.getElementById('rc-b').textContent=recBps;
   document.getElementById('btn-app').disabled=false;
 }
 
