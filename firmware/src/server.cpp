@@ -42,11 +42,15 @@ button{width:100%;padding:14px;margin-top:20px;background:#0d2b0d;
        border:1px solid #2a5a2a;border-radius:10px;color:#3f3;font-size:1em;cursor:pointer}
 #msg{margin-top:12px;text-align:center;color:#888;min-height:1.4em;font-size:.9em}
 .note{color:#333;font-size:.75em;margin-top:16px;text-align:center}
+.warn{background:#1a0800;border:1px solid #5a2800;border-radius:8px;
+      color:#f84;font-size:.88em;padding:10px 14px;margin-bottom:20px}
+.warn.locked{background:#1a0000;border-color:#5a0000;color:#f55}
 </style>
 </head>
 <body>
 <h2>Device Setup</h2>
 <div class="ssid">__SSID__</div>
+__WARN__
 
 <div class="step">
   <h3>1 &middot; Get your PIN</h3>
@@ -109,6 +113,15 @@ document.getElementById('f').addEventListener('submit',function(e){
 static void handle_root() {
     String page = SETUP_PAGE;
     page.replace("__SSID__", _ap_ssid);
+    String warn;
+    if (_pin_attempts >= 3) {
+        warn = "<div class=\"warn locked\">Device locked &mdash; too many failed attempts. Power-cycle to reset.</div>";
+    } else if (_pin_attempts == 2) {
+        warn = "<div class=\"warn\">2 failed PIN attempts recorded &mdash; 1 remaining. Check your surroundings.</div>";
+    } else if (_pin_attempts == 1) {
+        warn = "<div class=\"warn\">1 failed PIN attempt recorded. Check your surroundings.</div>";
+    }
+    page.replace("__WARN__", warn);
     _srv.send(200, "text/html; charset=utf-8", page);
 }
 
@@ -208,7 +221,7 @@ void server_start(const char suffix[4], const uint8_t pin[4]) {
 
     WiFi.mode(WIFI_AP_STA);
     WiFi.setHostname(_default_name);
-    WiFi.softAP(_ap_ssid);
+    WiFi.softAP(_ap_ssid, nullptr, 1, false, 1);
     Serial.printf("SoftAP SSID: %s  (open)  IP: %s\n",
                   _ap_ssid, WiFi.softAPIP().toString().c_str());
     Serial.printf("Device name: %s\n", _default_name);
