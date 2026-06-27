@@ -15,7 +15,6 @@ static char    _default_name[32];
 static bool    _adopted      = false;
 static int     _pin_attempts = 0;
 
-// __NAME__ replaced at serve time with chip-derived default.
 static const char SETUP_PAGE[] = R"HTML(
 <!DOCTYPE html><html lang="en">
 <head>
@@ -26,8 +25,11 @@ static const char SETUP_PAGE[] = R"HTML(
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#000;color:#ccc;font-family:-apple-system,sans-serif;
      padding:24px;max-width:380px;margin:0 auto;font-size:16px;line-height:1.5}
-h2{color:#fff;margin-bottom:6px}
-p{color:#888;font-size:.9em;margin-bottom:16px}
+h2{color:#fff;margin-bottom:4px}
+.ssid{font-family:monospace;font-size:1.1em;color:#3f3;margin-bottom:20px}
+.hint{color:#555;font-size:.85em;padding:12px 14px;background:#0a0a0a;
+      border:1px solid #1a1a1a;border-radius:8px;margin-bottom:20px;line-height:1.5}
+.hint a{color:#3a3a3a}
 label{display:block;color:#555;font-size:.78em;text-transform:uppercase;
       letter-spacing:.05em;margin:14px 0 4px}
 input,select{width:100%;padding:12px;background:#111;border:1px solid #2a2a2a;
@@ -41,7 +43,9 @@ button{width:100%;padding:14px;margin-top:20px;background:#0d2b0d;
 </head>
 <body>
 <h2>Device Setup</h2>
-<p>Enter your home WiFi details to connect this device.</p>
+<div class="ssid">__SSID__</div>
+<div class="hint">Open the <strong>ESP Commission</strong> app on your phone, scan the blinking LED, and note the PIN shown &mdash; then fill in the form below.<br><br>
+No app? Disconnect, install from <a href="https://idltd.github.io/esp-commission/">idltd.github.io/esp-commission</a>, then reconnect.</div>
 <form id="f">
   <label>Home WiFi Network</label>
   <select id="ssid"><option value="">Loading…</option></select>
@@ -49,7 +53,7 @@ button{width:100%;padding:14px;margin-top:20px;background:#0d2b0d;
   <input type="password" id="pass" autocomplete="current-password">
   <label>Device PIN</label>
   <input type="text" id="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
-         placeholder="4-digit PIN from blink" autocomplete="off">
+         placeholder="4-digit PIN from app" autocomplete="off">
   <button type="submit" id="btn">Add Device</button>
 </form>
 <div id="msg">Scanning for networks…</div>
@@ -71,7 +75,7 @@ document.getElementById('f').addEventListener('submit',function(e){
   e.preventDefault();
   if(!sel.value){msg.textContent='Select a network first.';return;}
   var pin=document.getElementById('pin').value;
-  if(!/^\d{4}$/.test(pin)){msg.textContent='Enter the 4-digit PIN from the blink.';return;}
+  if(!/^\d{4}$/.test(pin)){msg.textContent='Enter the 4-digit PIN from the app.';return;}
   btn.disabled=true;
   msg.textContent='Sending…';
   fetch('/adopt',{method:'POST',
@@ -96,7 +100,9 @@ document.getElementById('f').addEventListener('submit',function(e){
 )HTML";
 
 static void handle_root() {
-    _srv.send(200, "text/html; charset=utf-8", SETUP_PAGE);
+    String page = SETUP_PAGE;
+    page.replace("__SSID__", _ap_ssid);
+    _srv.send(200, "text/html; charset=utf-8", page);
 }
 
 static void handle_networks() {
